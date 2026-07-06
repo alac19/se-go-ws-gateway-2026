@@ -14,6 +14,12 @@ func main() {
 
 	r := gin.Default()
 
+	hd := handler.HandlerConnManagement()
+
+	r.GET("/ws", hd)
+
+	fmt.Println("路由注册成功！")
+
 	service := service.NewService()
 
 	hd1 := handler.HandleBroadcast(service)
