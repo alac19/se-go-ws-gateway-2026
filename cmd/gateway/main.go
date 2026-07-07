@@ -14,7 +14,11 @@ func main() {
 
 	r := gin.Default()
 
-	hd := handler.HandlerConnManagement()
+	cm := &service.ClientManager{}
+
+	go cm.Init()
+
+	hd := handler.HandlerConnManagement(cm)
 
 	r.GET("/ws", hd)
 
