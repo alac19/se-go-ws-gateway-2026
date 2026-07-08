@@ -11,43 +11,37 @@ import (
 
 func main() {
 	fmt.Println("MVP 框架搭建...")
-
 	r := gin.Default()
 
-	cm := &service.ClientManager{}
+	// 1. 初始化核心层（顺序：RoomManager -> ClientManager -> MessageRouter）
+	roomMgr := service.NewRoomManager()
+	clientMgr := service.NewClientManager(roomMgr)
+	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
 
-	go cm.Init()
+	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
+	go clientMgr.Init()
 
-	hd := handler.HandlerConnManagement(cm)
-
+	// 2. WebSocket 路由，传入 clientMgr
+	hd := handler.HandlerConnManagement(clientMgr)
 	r.GET("/ws", hd)
-
 	fmt.Println("路由注册成功！")
 
-	service := service.NewService()
-
-	hd1 := handler.HandleBroadcast(service)
-
+	// 3. 推送类接口，传入 messageRouter
+	hd1 := handler.HandleBroadcast(router)
 	r.POST("/api/broadcast", hd1)
-
 	fmt.Println("路由注册成功！")
 
-	hd2 := handler.HandleRoomBroadcast(service)
-
+	hd2 := handler.HandleRoomBroadcast(router)
 	r.POST("/api/room/:roomId/broadcast", hd2)
-
 	fmt.Println("路由注册成功！")
 
-	hd3 := handler.HandleClientSend(service)
-
+	hd3 := handler.HandleClientSend(router)
 	r.POST("/api/client/:clientId/send", hd3)
-
 	fmt.Println("路由注册成功！")
 
-	hd4 := handler.HandleStats(service)
-
+	// 4. 统计接口，传入 clientMgr
+	hd4 := handler.HandleStats(clientMgr)
 	r.GET("/api/stats", hd4)
-
 	fmt.Println("路由注册成功！")
 
 	r.Run()

@@ -7,35 +7,113 @@ import (
 	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
 )
 
-// 连接管理器
+// ClientManager 连接管理器（CSP 模型：通过 channel 通信），并发安全使用sync.Map
 type ClientManager struct {
 	clients    sync.Map
 	register   chan *model.Client
 	unregister chan string
+	roomMgr    *RoomManager
 }
 
+// NewClientManager 创建连接管理器实例，注入房间管理器
+func NewClientManager(roomMgr *RoomManager) *ClientManager {
+	return &ClientManager{
+		clients:    sync.Map{},
+		register:   make(chan *model.Client, 256),
+		unregister: make(chan string, 256),
+		roomMgr:    roomMgr,
+	}
+}
+
+// Register 向 register 通道发送注册事件（非阻塞）
 func (cm *ClientManager) Register(client *model.Client) {
 	cm.register <- client
 }
 
-func (cm *ClientManager) Unregister(ID string) {
-	cm.unregister <- ID
+// Unregister 向 unregister 通道发送注销事件（非阻塞）
+func (cm *ClientManager) Unregister(clientID string) {
+	cm.unregister <- clientID
 }
 
 func (cm *ClientManager) Init() {
-	cm.register = make(chan *model.Client, 256)
-	cm.unregister = make(chan string, 256)
+	// cm.register = make(chan *model.Client, 256)
+	// cm.unregister = make(chan string, 256)
 
 	for {
 		select {
 		case client := <-cm.register:
-			cm.clients.Store(client.ID, client)
+			cm.clients.Store(client.ClientID, client)
 
-			fmt.Println("注册成功！")
-		case ID := <-cm.unregister:
-			cm.clients.Delete(ID)
+			if client.RoomID != "" && cm.roomMgr != nil {
+				cm.roomMgr.Join(client.RoomID, client.ClientID)
+			}
 
-			fmt.Println("注销成功！")
+			fmt.Printf("注册成功: clientID=%s, roomID=%s\n", client.ClientID, client.RoomID)
+		case clientID := <-cm.unregister:
+			// cm.clients.Delete(ID)
+
+			val, ok := cm.clients.LoadAndDelete(clientID)
+			if !ok {
+				continue
+			}
+			client := val.(*model.Client)
+			// 关闭发送通道
+			close(client.SendChan)
+			// 从所有房间移除
+			if cm.roomMgr != nil {
+				cm.roomMgr.RemoveClientFromAllRooms(clientID)
+			}
+			// 关闭 WebSocket 连接
+			_ = client.Conn.Close()
+			fmt.Printf("注销成功: clientID=%s\n", clientID)
 		}
 	}
+}
+
+// // Register 注册客户端，加入连接池并加入对应房间
+// func (cm *ClientManager) Register(client *model.Client) {
+// 	cm.onlineClients.Store(client.ClientID, client)
+// 	if client.RoomID != "" {
+// 		cm.roomMgr.Join(client.RoomID, client.ClientID)
+// 	}
+// }
+
+// // Unregister 注销客户端，移除连接并退出所有房间
+// func (cm *ClientManager) Unregister(clientID string) {
+// 	val, ok := cm.onlineClients.LoadAndDelete(clientID)
+// 	if !ok {
+// 		return
+// 	}
+// 	cli := val.(*model.Client)
+// 	// 关闭发送通道
+// 	close(cli.SendChan)
+// 	// 从全部房间移除该客户端
+// 	cm.roomMgr.RemoveClientFromAllRooms(clientID)
+// 	// 关闭ws连接
+// 	_ = cli.Conn.Close()
+// }
+
+// Get 根据clientID查询客户端
+
+func (cm *ClientManager) Get(clientID string) (*model.Client, bool) {
+	val, ok := cm.clients.Load(clientID)
+	if !ok {
+		return nil, false
+	}
+	return val.(*model.Client), true
+}
+
+// Range 遍历所有在线客户端，回调处理
+func (cm *ClientManager) Range(fn func(key any, val any) bool) {
+	cm.clients.Range(fn)
+}
+
+// GetOnlineCount 获取在线连接总数（统计接口使用）
+func (cm *ClientManager) GetOnlineCount() int {
+	count := 0
+	cm.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
 }

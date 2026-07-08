@@ -9,15 +9,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
-	client "github.com/alac/se-go-ws-gateway-2026/internal/model"
-	clientManager "github.com/alac/se-go-ws-gateway-2026/internal/service"
+	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
+	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-func HandlerConnManagement(cm *clientManager.ClientManager) gin.HandlerFunc {
+// 入参改为 *service.ClientManager
+func HandlerConnManagement(clientMgr *service.ClientManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fmt.Println("进入 handler 层 —— WebSocket 接入...")
 
@@ -38,11 +39,10 @@ func HandlerConnManagement(cm *clientManager.ClientManager) gin.HandlerFunc {
 			return
 		}
 
-		currentTime := time.Now().UTC()
-		client := client.NewClient(clientID, roomID, conn, currentTime)
-		cm.Register(client)
+		client := model.NewClient(clientID, roomID, conn, time.Now())
+		clientMgr.Register(client)
 		defer conn.Close()
-		defer cm.Unregister(clientID)
+		defer clientMgr.Unregister(clientID)
 
 		// 读写逻辑...
 		// for {
@@ -59,14 +59,14 @@ func HandlerConnManagement(cm *clientManager.ClientManager) gin.HandlerFunc {
 		// 	}
 		// }
 
-		go func() {
-			for {
-				messageType := <-client.Send
+		// go func() {
+		// 	for {
+		// 		messageType := <-client.Send
 
-				if err := conn.WriteMessage(messageType, p); err != nil {
-					log.Println(err)
-				}
-			}
-		}()
+		// 		if err := conn.WriteMessage(messageType, p); err != nil {
+		// 			log.Println(err)
+		// 		}
+		// 	}
+		// }()
 	}
 }
