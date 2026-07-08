@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	client "github.com/alac/se-go-ws-gateway-2026/internal/model"
-	clientManager "github.com/alac/se-go-ws-gateway-2026/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+
+	client "github.com/alac/se-go-ws-gateway-2026/internal/model"
+	clientManager "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
 
 var upgrader = websocket.Upgrader{
@@ -20,6 +21,7 @@ func HandlerConnManagement(cm *clientManager.ClientManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fmt.Println("进入 handler 层 —— WebSocket 接入...")
 
+		// 升级连接
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 
 		if err != nil {
@@ -27,8 +29,7 @@ func HandlerConnManagement(cm *clientManager.ClientManager) gin.HandlerFunc {
 			return
 		}
 
-		// 连接管理业务逻辑...
-		// 加入连接池...
+		// 连接生命周期管理业务逻辑...
 		clientID := c.Query("clientId")
 		roomID := c.Query("roomId")
 
@@ -43,18 +44,29 @@ func HandlerConnManagement(cm *clientManager.ClientManager) gin.HandlerFunc {
 		defer conn.Close()
 		defer cm.Unregister(clientID)
 
-		for {
-			messageType, p, err := conn.ReadMessage()
+		// 读写逻辑...
+		// for {
+		// 	messageType, p, err := conn.ReadMessage()
 
-			if err != nil {
-				log.Println(err)
-				return
-			}
+		// 	if err != nil {
+		// 		log.Println(err)
+		// 		return
+		// 	}
 
-			if err := conn.WriteMessage(messageType, p); err != nil {
-				log.Println(err)
-				return
+		// 	if err := conn.WriteMessage(messageType, p); err != nil {
+		// 		log.Println(err)
+		// 		return
+		// 	}
+		// }
+
+		go func() {
+			for {
+				messageType := <-client.Send
+
+				if err := conn.WriteMessage(messageType, p); err != nil {
+					log.Println(err)
+				}
 			}
-		}
+		}()
 	}
 }
