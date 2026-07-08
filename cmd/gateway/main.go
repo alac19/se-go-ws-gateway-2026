@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/gin-gonic/gin"
+
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
@@ -11,10 +13,13 @@ func main() {
 	fmt.Println("MVP 框架搭建...")
 	r := gin.Default()
 
-	// 1. 初始化分层核心（替换旧service）
-	clientMgr := service.NewClientManager()
+	// 1. 初始化核心层（顺序：RoomManager -> ClientManager -> MessageRouter）
 	roomMgr := service.NewRoomManager()
+	clientMgr := service.NewClientManager(roomMgr)
 	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
+
+	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
+	go clientMgr.Init()
 
 	// 2. WebSocket 路由，传入 clientMgr
 	hd := handler.HandlerConnManagement(clientMgr)
