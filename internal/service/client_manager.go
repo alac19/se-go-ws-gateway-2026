@@ -36,9 +36,6 @@ func (cm *ClientManager) Unregister(clientID string) {
 }
 
 func (cm *ClientManager) Init() {
-	// cm.register = make(chan *model.Client, 256)
-	// cm.unregister = make(chan string, 256)
-
 	for {
 		select {
 		case client := <-cm.register:
@@ -50,48 +47,29 @@ func (cm *ClientManager) Init() {
 
 			fmt.Printf("注册成功: clientID=%s, roomID=%s\n", client.ClientID, client.RoomID)
 		case clientID := <-cm.unregister:
-			// cm.clients.Delete(ID)
-
 			val, ok := cm.clients.LoadAndDelete(clientID)
+
 			if !ok {
 				continue
 			}
+
 			client := val.(*model.Client)
+
 			// 关闭发送通道
 			close(client.SendChan)
+
 			// 从所有房间移除
 			if cm.roomMgr != nil {
 				cm.roomMgr.RemoveClientFromAllRooms(clientID)
 			}
+
 			// 关闭 WebSocket 连接
 			_ = client.Conn.Close()
+
 			fmt.Printf("注销成功: clientID=%s\n", clientID)
 		}
 	}
 }
-
-// // Register 注册客户端，加入连接池并加入对应房间
-// func (cm *ClientManager) Register(client *model.Client) {
-// 	cm.onlineClients.Store(client.ClientID, client)
-// 	if client.RoomID != "" {
-// 		cm.roomMgr.Join(client.RoomID, client.ClientID)
-// 	}
-// }
-
-// // Unregister 注销客户端，移除连接并退出所有房间
-// func (cm *ClientManager) Unregister(clientID string) {
-// 	val, ok := cm.onlineClients.LoadAndDelete(clientID)
-// 	if !ok {
-// 		return
-// 	}
-// 	cli := val.(*model.Client)
-// 	// 关闭发送通道
-// 	close(cli.SendChan)
-// 	// 从全部房间移除该客户端
-// 	cm.roomMgr.RemoveClientFromAllRooms(clientID)
-// 	// 关闭ws连接
-// 	_ = cli.Conn.Close()
-// }
 
 // Get 根据clientID查询客户端
 

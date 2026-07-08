@@ -41,32 +41,38 @@ func HandlerConnManagement(clientMgr *service.ClientManager) gin.HandlerFunc {
 
 		client := model.NewClient(clientID, roomID, conn, time.Now())
 		clientMgr.Register(client)
-		defer conn.Close()
-		defer clientMgr.Unregister(clientID)
 
 		// 读写逻辑...
-		// for {
-		// 	messageType, p, err := conn.ReadMessage()
+		// 启动读写协程（每个连接独享）
+		go writePump(client)
+		go readPump(client, clientMgr)
+	}
+}
 
-		// 	if err != nil {
-		// 		log.Println(err)
-		// 		return
-		// 	}
+// writePump 从 SendChan 读取消息并写入 WebSocket
+func writePump(client *model.Client) {
+	for msg := range client.SendChan {
+		if err := client.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("writePump error: %v", err)
+			return
+		}
+	}
+}
 
-		// 	if err := conn.WriteMessage(messageType, p); err != nil {
-		// 		log.Println(err)
-		// 		return
-		// 	}
-		// }
+// readPump 读取 WebSocket 消息（检测连接断开）
+func readPump(client *model.Client, clientMgr *service.ClientManager) {
+	defer func() {
+		// 连接断开时，通知连接池注销
+		clientMgr.Unregister(client.ClientID)
+	}()
 
-		// go func() {
-		// 	for {
-		// 		messageType := <-client.Send
+	for {
+		_, _, err := client.Conn.ReadMessage()
 
-		// 		if err := conn.WriteMessage(messageType, p); err != nil {
-		// 			log.Println(err)
-		// 		}
-		// 	}
-		// }()
+		if err != nil {
+			log.Printf("readPump error: %v", err)
+			return
+		}
+		// 这里可以处理上行消息（目前暂不处理）
 	}
 }
