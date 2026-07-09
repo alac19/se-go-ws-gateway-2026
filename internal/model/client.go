@@ -26,3 +26,13 @@ func NewClient(clientID, roomID string, conn *websocket.Conn, lastPong time.Time
 		LastPong: lastPong,
 	}
 }
+
+// Lock 锁定客户端的 mu，用于保护 Conn 的并发写入
+func (c *Client) Lock() {
+	c.mu.Lock()
+}
+
+// Unlock 解锁客户端的 mu
+func (c *Client) Unlock() {
+	c.mu.Unlock()
+}
