@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-
 	"github.com/gin-gonic/gin"
-
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
