@@ -43,40 +43,34 @@ func GetRouter() *MessageRouter {
 }
 
 // SendSingle 点对点单播推送
-// clientId: 目标客户端ID
-// msg: 待推送消息实体
 func (r *MessageRouter) SendSingle(clientId string, msg *model.Message) bool {
-	// 指标计数：单播消息总量
 	metrics.MsgSendTotal.WithLabelValues("single").Inc()
 
-	// cli, ok := r.clientMgr.GetClient(clientId)
-	// if !ok {
-	// 	metrics.MsgSendFail.WithLabelValues("single_offline").Inc()
-	// 	return false
-	// }
-	// // 非阻塞写入发送通道，慢客户端自动剔除
-	// select {
-	// case cli.SendChan <- msg.Payload:
-	// default:
-	// 	metrics.MsgSendFail.WithLabelValues("single_block").Inc()
-	// 	r.clientMgr.RemoveClient(clientId)
-	// 	return false
-	// }
-	return true
+	cli, ok := r.clientMgr.Get(clientId)
+	if !ok {
+		metrics.MsgSendFail.WithLabelValues("single_offline").Inc()
+		return false
+	}
+
+	// 非阻塞写入发送通道，缓冲区满判定慢客户端，自动下线
+	select {
+	case cli.SendChan <- msg.Payload:
+		return true
+	default:
+		metrics.MsgSendFail.WithLabelValues("single_block").Inc()
+		r.clientMgr.Unregister(clientId)
+		return false
+	}
 }
 
 // SendRoom 房间全员广播
 func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 	metrics.MsgSendTotal.WithLabelValues("room").Inc()
-	// clients := r.roomMgr.GetRoomClients(roomId)
-	// for _, cli := range clients {
-	// 	select {
-	// 	case cli.SendChan <- msg.Payload:
-	// 	default:
-	// 		metrics.MsgSendFail.WithLabelValues("room_block").Inc()
-	// 		r.clientMgr.RemoveClient(cli.ClientID)
-	// 	}
-	// }
+
+	clientIDs := r.roomMgr.GetClients(roomId)
+	for _, cid := range clientIDs {
+		r.SendSingle(cid, msg)
+	}
 
 	// 分布式同步：推送至Redis Pub/Sub，其他网关同步推送
 	if r.redisCli != nil {
@@ -87,15 +81,18 @@ func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 // SendBroadcast 全局全服广播
 func (r *MessageRouter) SendBroadcast(msg *model.Message) {
 	metrics.MsgSendTotal.WithLabelValues("broadcast").Inc()
-	// allClients := r.clientMgr.GetAllClients()
-	// for _, cli := range allClients {
-	// 	select {
-	// 	case cli.SendChan <- msg.Payload:
-	// 	default:
-	// 		metrics.MsgSendFail.WithLabelValues("broadcast_block").Inc()
-	// 		r.clientMgr.RemoveClient(cli.ClientID)
-	// 	}
-	// }
+
+	// 遍历全部在线客户端
+	r.clientMgr.Range(func(_, val any) bool {
+		cli := val.(*model.Client)
+		select {
+		case cli.SendChan <- msg.Payload:
+		default:
+			metrics.MsgSendFail.WithLabelValues("broadcast_block").Inc()
+			r.clientMgr.Unregister(cli.ClientID)
+		}
+		return true
+	})
 
 	// 分布式集群同步
 	if r.redisCli != nil {
@@ -108,7 +105,6 @@ func (r *MessageRouter) subscribeRedis() {
 	sub := r.redisCli.Subscribe(r.ctx, "ws:broadcast", "ws:room:*")
 	defer sub.Close()
 	ch := sub.Channel()
-
 	for pubMsg := range ch {
 		payload := []byte(pubMsg.Payload)
 		msg := &model.Message{Payload: payload}
