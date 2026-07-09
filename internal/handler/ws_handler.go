@@ -51,10 +51,21 @@ func HandlerConnManagement(clientMgr *service.ClientManager) gin.HandlerFunc {
 
 // writePump 从 SendChan 读取消息并写入 WebSocket
 func writePump(client *model.Client) {
-	for msg := range client.SendChan {
-		if err := client.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			log.Printf("writePump error: %v", err)
-			return
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case msg, ok := <-client.SendChan:
+			if !ok {
+				// SendChan 已关闭，退出
+				return
+			}
+			if err := client.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Printf("writePump error: %v", err)
+			}
+		case <-ticker.C:
+			client.Conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second))
 		}
 	}
 }
@@ -66,6 +77,12 @@ func readPump(client *model.Client, clientMgr *service.ClientManager) {
 		clientMgr.Unregister(client.ClientID)
 	}()
 
+	client.Conn.SetPongHandler(func(appData string) error {
+		client.LastPong = time.Now()
+
+		return nil
+	})
+
 	for {
 		_, _, err := client.Conn.ReadMessage()
 
@@ -73,6 +90,10 @@ func readPump(client *model.Client, clientMgr *service.ClientManager) {
 			log.Printf("readPump error: %v", err)
 			return
 		}
-		// 这里可以处理上行消息（目前暂不处理）
+		// 这里可以处理上行消息...
+		if time.Since(client.LastPong) > 60*time.Second {
+			fmt.Println("Pong 超时, 失活!")
+			return
+		}
 	}
 }
