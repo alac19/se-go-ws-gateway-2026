@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/alac/se-go-ws-gateway-2026/internal/model"
 	"github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
+	"github.com/go-redis/redis/v8"
 )
 
 // MessageRouter 消息路由核心，负责各类消息分发
@@ -49,34 +49,34 @@ func (r *MessageRouter) SendSingle(clientId string, msg *model.Message) bool {
 	// 指标计数：单播消息总量
 	metrics.MsgSendTotal.WithLabelValues("single").Inc()
 
-	cli, ok := r.clientMgr.GetClient(clientId)
-	if !ok {
-		metrics.MsgSendFail.WithLabelValues("single_offline").Inc()
-		return false
-	}
-	// 非阻塞写入发送通道，慢客户端自动剔除
-	select {
-	case cli.SendChan <- msg.Payload:
-	default:
-		metrics.MsgSendFail.WithLabelValues("single_block").Inc()
-		r.clientMgr.RemoveClient(clientId)
-		return false
-	}
+	// cli, ok := r.clientMgr.GetClient(clientId)
+	// if !ok {
+	// 	metrics.MsgSendFail.WithLabelValues("single_offline").Inc()
+	// 	return false
+	// }
+	// // 非阻塞写入发送通道，慢客户端自动剔除
+	// select {
+	// case cli.SendChan <- msg.Payload:
+	// default:
+	// 	metrics.MsgSendFail.WithLabelValues("single_block").Inc()
+	// 	r.clientMgr.RemoveClient(clientId)
+	// 	return false
+	// }
 	return true
 }
 
 // SendRoom 房间全员广播
 func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 	metrics.MsgSendTotal.WithLabelValues("room").Inc()
-	clients := r.roomMgr.GetRoomClients(roomId)
-	for _, cli := range clients {
-		select {
-		case cli.SendChan <- msg.Payload:
-		default:
-			metrics.MsgSendFail.WithLabelValues("room_block").Inc()
-			r.clientMgr.RemoveClient(cli.ClientID)
-		}
-	}
+	// clients := r.roomMgr.GetRoomClients(roomId)
+	// for _, cli := range clients {
+	// 	select {
+	// 	case cli.SendChan <- msg.Payload:
+	// 	default:
+	// 		metrics.MsgSendFail.WithLabelValues("room_block").Inc()
+	// 		r.clientMgr.RemoveClient(cli.ClientID)
+	// 	}
+	// }
 
 	// 分布式同步：推送至Redis Pub/Sub，其他网关同步推送
 	if r.redisCli != nil {
@@ -87,15 +87,15 @@ func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 // SendBroadcast 全局全服广播
 func (r *MessageRouter) SendBroadcast(msg *model.Message) {
 	metrics.MsgSendTotal.WithLabelValues("broadcast").Inc()
-	allClients := r.clientMgr.GetAllClients()
-	for _, cli := range allClients {
-		select {
-		case cli.SendChan <- msg.Payload:
-		default:
-			metrics.MsgSendFail.WithLabelValues("broadcast_block").Inc()
-			r.clientMgr.RemoveClient(cli.ClientID)
-		}
-	}
+	// allClients := r.clientMgr.GetAllClients()
+	// for _, cli := range allClients {
+	// 	select {
+	// 	case cli.SendChan <- msg.Payload:
+	// 	default:
+	// 		metrics.MsgSendFail.WithLabelValues("broadcast_block").Inc()
+	// 		r.clientMgr.RemoveClient(cli.ClientID)
+	// 	}
+	// }
 
 	// 分布式集群同步
 	if r.redisCli != nil {
