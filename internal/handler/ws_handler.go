@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +22,7 @@ var upgrader = websocket.Upgrader{
 }
 
 // HandlerConnManagement WebSocket 接入：协议升级、连接注册、心跳保活
-func HandlerConnManagement(clientMgr *service.ClientManager) gin.HandlerFunc {
+func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context, wg *sync.WaitGroup) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fmt.Println("进入 handler 层 —— WebSocket 接入...")
 
@@ -64,25 +66,34 @@ func HandlerConnManagement(clientMgr *service.ClientManager) gin.HandlerFunc {
 		conn.SetPongHandler(func(appData string) error {
 			client.LastPong = time.Now()
 
+			log.Printf("[心跳] 客户端 %s 收到 Pong，LastPong 更新为 %s", client.ClientID, client.LastPong.Format("15:04:05"))
+
 			return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		})
 
 		// 启动读写协程（每个连接独享）
-		go writePump(client)
-		go readPump(client, clientMgr)
+		wg.Add(2)
+		go writePump(client, ctx, wg)
+		go readPump(client, clientMgr, wg)
 	}
 }
 
 // writePump 从 SendChan 读取消息并写入 WebSocket, 同时定时发送 Ping 帧
-func writePump(client *model.Client) {
+func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup) {
 	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	defer func() {
+		wg.Done()
+		ticker.Stop()
+	}()
+
+	log.Printf("[心跳] 客户端 %s writePump 启动，Ping 定时器已开启 (间隔 30s)", client.ClientID)
 
 	for {
 		select {
 		case msg, ok := <-client.SendChan:
 			if !ok {
 				// SendChan 已关闭，退出
+				log.Printf("[心跳] 客户端 %s SendChan 已关闭，writePump 退出", client.ClientID)
 				return
 			}
 
@@ -96,6 +107,7 @@ func writePump(client *model.Client) {
 				return
 			}
 		case <-ticker.C:
+			log.Printf("[心跳] 客户端 %s 发送 Ping 帧 (时间: %s)", client.ClientID, time.Now().Format("15:04:05"))
 			_ = client.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			err := client.Conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second))
 
@@ -103,18 +115,22 @@ func writePump(client *model.Client) {
 				log.Printf("writePump ping error: %v", err)
 				return
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
 // readPump 读取 WebSocket 消息, 检测连接断开和 Pong 超时
-func readPump(client *model.Client, clientMgr *service.ClientManager) {
+func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.WaitGroup) {
 	defer func() {
 		// 发送关闭帧通知客户端
 		_ = client.Conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		// 连接断开时，通知连接池注销
 		clientMgr.Unregister(client.ClientID)
+		wg.Done()
+		log.Printf("[心跳] 客户端 %s readPump 退出，连接已注销", client.ClientID)
 	}()
 
 	for {
@@ -126,7 +142,7 @@ func readPump(client *model.Client, clientMgr *service.ClientManager) {
 		}
 
 		if time.Since(client.LastPong) > 60*time.Second {
-			fmt.Println("Pong 超时, 失活!")
+			log.Printf("[心跳] 客户端 %s Pong 超时 (LastPong: %s)，连接失活!", client.ClientID, client.LastPong.Format("15:04:05"))
 			return
 		}
 	}
