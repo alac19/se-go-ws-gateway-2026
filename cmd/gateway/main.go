@@ -1,15 +1,29 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+
 	"github.com/gin-gonic/gin"
+
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
 
 func main() {
-	fmt.Println("MVP 框架搭建...")
 	r := gin.Default()
+
+	var wg sync.WaitGroup
+
+	ctx, cancel := context.WithCancel(context.Background())
+	quit := make(chan os.Signal, 2)
+
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM) // 监听信号
 
 	// 1. 初始化核心层（顺序：RoomManager -> ClientManager -> MessageRouter）
 	roomMgr := service.NewRoomManager()
@@ -20,7 +34,7 @@ func main() {
 	go clientMgr.Init()
 
 	// 2. WebSocket 路由，传入 clientMgr
-	hd := handler.HandlerConnManagement(clientMgr)
+	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg)
 	r.GET("/ws", hd)
 	fmt.Println("路由注册成功！")
 
@@ -42,5 +56,16 @@ func main() {
 	r.GET("/api/stats", hd4)
 	fmt.Println("路由注册成功！")
 
-	r.Run()
+	httpSvr := http.Server{Addr: ":8080", Handler: r}
+
+	go httpSvr.ListenAndServe()
+
+	if s := <-quit; s != nil { // 收到信号
+		fmt.Println("优雅退出!")
+
+		cancel()              // 传递上下文
+		httpSvr.Shutdown(ctx) // 关闭 HTTP Server
+		clientMgr.Shutdown(5)
+		wg.Wait()
+	}
 }

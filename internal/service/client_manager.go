@@ -3,8 +3,10 @@ package service
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
+	"github.com/gorilla/websocket"
 )
 
 // ClientManager 连接管理器（CSP 模型：通过 channel 通信），并发安全使用sync.Map
@@ -94,4 +96,26 @@ func (cm *ClientManager) GetOnlineCount() int {
 		return true
 	})
 	return count
+}
+
+func (cm *ClientManager) Shutdown(gracePeriod int) {
+	clients := make([]*model.Client, 0, cm.GetOnlineCount())
+	forceCloseTicker := time.After(time.Duration(gracePeriod) * time.Second)
+
+	cm.Range(func(key, value any) bool {
+		client := value.(*model.Client)
+		client.Lock()
+		_ = client.Conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(1000, ""))
+		client.Unlock()
+		clients = append(clients, client)
+
+		return true
+	})
+
+	<-forceCloseTicker
+
+	for _, client := range clients {
+		cm.Unregister(client.ClientID)
+	}
 }
