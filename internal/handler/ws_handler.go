@@ -13,6 +13,7 @@ import (
 
 	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
+	metrics "github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
 )
 
 var upgrader = websocket.Upgrader{
@@ -48,8 +49,30 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		if clientID == "" || roomID == "" {
 			log.Printf("参数缺失: clientId=%q, roomId=%q", clientID, roomID)
 
-			_ = conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(4000, "clientId and roomId are required"))
+			err := conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4000, "clientId and roomId are required"),
+				time.Now().Add(1*time.Second))
+
+			if err != nil {
+				log.Printf("发送关闭帧失败: %v", err)
+			}
+
+			_ = conn.Close()
+
+			return
+		}
+
+		if _, res := clientMgr.Get(clientID); res {
+			log.Printf("clientId 已存在: clientId=%q", clientID)
+
+			err := conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4001, "clientId already exists"),
+				time.Now().Add(1*time.Second))
+
+			if err != nil {
+				log.Printf("发送关闭帧失败: %v", err)
+			}
+
 			_ = conn.Close()
 
 			return
@@ -140,6 +163,8 @@ func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.W
 			log.Printf("readPump error: %v", err)
 			return
 		}
+
+		metrics.MsgRecvTotal.Inc()
 
 		if time.Since(client.LastPong) > 60*time.Second {
 			log.Printf("[心跳] 客户端 %s Pong 超时 (LastPong: %s)，连接失活!", client.ClientID, client.LastPong.Format("15:04:05"))
