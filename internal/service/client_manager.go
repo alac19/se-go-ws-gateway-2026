@@ -2,11 +2,14 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
-	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
 	"github.com/gorilla/websocket"
+
+	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
+	metrics "github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
 )
 
 // ClientManager 连接管理器（CSP 模型：通过 channel 通信），并发安全使用sync.Map
@@ -41,7 +44,24 @@ func (cm *ClientManager) Init() {
 	for {
 		select {
 		case client := <-cm.register:
-			cm.clients.Store(client.ClientID, client)
+			_, loaded := cm.clients.LoadOrStore(client.ClientID, client)
+
+			if loaded {
+				err := client.Conn.WriteControl(websocket.CloseMessage,
+					websocket.FormatCloseMessage(4001, "clientId already exists"),
+					time.Now().Add(1*time.Second))
+
+				if err != nil {
+					log.Printf("发送关闭帧失败: %v", err)
+				}
+
+				_ = client.Conn.Close()
+
+				continue
+			}
+
+			metrics.OnlineConnGauge.Inc()
+			metrics.ConnEventTotal.Inc()
 
 			if client.RoomID != "" && cm.roomMgr != nil {
 				cm.roomMgr.Join(client.RoomID, client.ClientID)
@@ -49,6 +69,8 @@ func (cm *ClientManager) Init() {
 
 			fmt.Printf("注册成功: clientID=%s, roomID=%s\n", client.ClientID, client.RoomID)
 		case clientID := <-cm.unregister:
+			metrics.OnlineConnGauge.Dec()
+			metrics.ConnEventTotal.Inc()
 			val, ok := cm.clients.LoadAndDelete(clientID)
 
 			if !ok {

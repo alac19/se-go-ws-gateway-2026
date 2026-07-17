@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
@@ -54,6 +55,10 @@ func main() {
 	// 4. 统计接口，传入 clientMgr
 	hd4 := handler.HandleStats(clientMgr)
 	r.GET("/api/stats", hd4)
+	fmt.Println("路由注册成功！")
+
+	// 5. /metrics 端点
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	fmt.Println("路由注册成功！")
 
 	httpSvr := http.Server{Addr: ":8080", Handler: r}
