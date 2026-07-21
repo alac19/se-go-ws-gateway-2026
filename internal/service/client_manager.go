@@ -48,7 +48,7 @@ func (cm *ClientManager) Init() {
 
 			if loaded {
 				err := client.Conn.WriteControl(websocket.CloseMessage,
-					websocket.FormatCloseMessage(4001, "clientId already exists"),
+					websocket.FormatCloseMessage(4002, "clientId already exists"),
 					time.Now().Add(1*time.Second))
 
 				if err != nil {

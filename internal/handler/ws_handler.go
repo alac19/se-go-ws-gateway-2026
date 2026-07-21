@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 }
+var validIDPattern = regexp.MustCompile("^[a-zA-Z0-9_-]+$")
 
 // HandlerConnManagement WebSocket 接入：协议升级、连接注册、心跳保活
 func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context, wg *sync.WaitGroup) gin.HandlerFunc {
@@ -62,11 +64,43 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 			return
 		}
 
+		if !validIDPattern.MatchString(clientID) {
+			log.Printf("clientId 包含非法字符: %q", clientID)
+
+			err := conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4001, "invalid clientId format"),
+				time.Now().Add(1*time.Second))
+
+			if err != nil {
+				log.Printf("发送关闭帧失败: %v", err)
+			}
+
+			_ = conn.Close()
+
+			return
+		}
+
+		if !validIDPattern.MatchString(roomID) {
+			log.Printf("roomID 包含非法字符: %q", roomID)
+
+			err := conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4001, "invalid roomID format"),
+				time.Now().Add(1*time.Second))
+
+			if err != nil {
+				log.Printf("发送关闭帧失败: %v", err)
+			}
+
+			_ = conn.Close()
+
+			return
+		}
+
 		if _, res := clientMgr.Get(clientID); res {
 			log.Printf("clientId 已存在: clientId=%q", clientID)
 
 			err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(4001, "clientId already exists"),
+				websocket.FormatCloseMessage(4002, "clientId already exists"),
 				time.Now().Add(1*time.Second))
 
 			if err != nil {
