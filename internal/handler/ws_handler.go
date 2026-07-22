@@ -139,6 +139,10 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("internal error: %v", p)
+		}
+
 		wg.Done()
 		ticker.Stop()
 	}()
@@ -181,6 +185,10 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup) {
 // readPump 读取 WebSocket 消息, 检测连接断开和 Pong 超时
 func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.WaitGroup) {
 	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("internal error: %v", p)
+		}
+
 		// 发送关闭帧通知客户端
 		_ = client.Conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
