@@ -68,3 +68,23 @@ func (rm *RoomManager) RemoveClientFromAllRooms(clientID string) {
 		}
 	}
 }
+
+func (rm *RoomManager) GetAllRoomsConnStats() map[string]int {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	connStats := make(map[string]int)
+
+	for roomID, members := range rm.rooms {
+		connStats[roomID] = len(members)
+	}
+
+	return connStats
+}
+
+func (rm *RoomManager) HasRoom(roomID string) bool {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	_, ok := rm.rooms[roomID]
+
+	return ok
+}
