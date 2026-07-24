@@ -2,11 +2,12 @@ package handler
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
-	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 	"github.com/alac/se-go-ws-gateway-2026/internal/model"
+	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
 
 // HandleBroadcast 全服广播：读取请求体 JSON 并推送给所有在线客户端
@@ -92,15 +93,20 @@ func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 }
 
 // HandleStats 连接统计：返回当前网关在线连接数
-func HandleStats(clientMgr *service.ClientManager) gin.HandlerFunc {
+func HandleStats(clientMgr *service.ClientManager, roomMgr *service.RoomManager, svrInitTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("进入 handler 层 —— 连接管理统计信息...")
-		res := clientMgr.GetOnlineCount()
+		fmt.Println("进入 handler 层 —— 连接管理统计信息")
+
+		res1 := clientMgr.GetOnlineCount()
+		res2 := roomMgr.GetAllRoomsConnStats()
+
 		c.JSON(200, gin.H{
 			"code":   0,
 			"status": "success",
 			"data": gin.H{
-				"online_connections": res,
+				"online_connections":          res1,
+				"all_rooms_connections_stats": res2,
+				"gateway_server_initial_time": int(time.Since(svrInitTime).Seconds()),
 			},
 		})
 	}

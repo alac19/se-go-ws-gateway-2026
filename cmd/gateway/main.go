@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -17,6 +18,8 @@ import (
 )
 
 func main() {
+	serverInitTime := time.Now()
+
 	r := gin.Default()
 
 	var wg sync.WaitGroup
@@ -53,7 +56,7 @@ func main() {
 	fmt.Println("路由注册成功！")
 
 	// 4. 统计接口，传入 clientMgr
-	hd4 := handler.HandleStats(clientMgr)
+	hd4 := handler.HandleStats(clientMgr, roomMgr, serverInitTime)
 	r.GET("/api/stats", hd4)
 	fmt.Println("路由注册成功！")
 
