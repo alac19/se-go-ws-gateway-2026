@@ -12,9 +12,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/time/rate"
 
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
+	ratelimit "github.com/alac/se-go-ws-gateway-2026/internal/middleware"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
+	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
 )
 
 func main() {
@@ -33,6 +36,10 @@ func main() {
 	roomMgr := service.NewRoomManager()
 	clientMgr := service.NewClientManager(roomMgr)
 	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
+	lm := limiter.NewLimiterMap(rate.Every(12*time.Second), 5)
+	md1 := ratelimit.HandleRateLimit(lm)
+
+	api := r.Group("/api", md1)
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
 	go clientMgr.Init()
@@ -44,20 +51,20 @@ func main() {
 
 	// 3. 推送类接口，传入 messageRouter
 	hd1 := handler.HandleBroadcast(router)
-	r.POST("/api/broadcast", hd1)
+	api.POST("/broadcast", hd1)
 	fmt.Println("路由注册成功！")
 
 	hd2 := handler.HandleRoomBroadcast(router, roomMgr)
-	r.POST("/api/room/:roomId/broadcast", hd2)
+	api.POST("/room/:roomId/broadcast", hd2)
 	fmt.Println("路由注册成功！")
 
 	hd3 := handler.HandleClientSend(router)
-	r.POST("/api/client/:clientId/send", hd3)
+	api.POST("/client/:clientId/send", hd3)
 	fmt.Println("路由注册成功！")
 
 	// 4. 统计接口，传入 clientMgr
 	hd4 := handler.HandleStats(clientMgr, roomMgr, serverInitTime)
-	r.GET("/api/stats", hd4)
+	api.GET("/stats", hd4)
 	fmt.Println("路由注册成功！")
 
 	// 5. /metrics 端点
