@@ -47,7 +47,7 @@ func main() {
 	r.POST("/api/broadcast", hd1)
 	fmt.Println("路由注册成功！")
 
-	hd2 := handler.HandleRoomBroadcast(router)
+	hd2 := handler.HandleRoomBroadcast(router, roomMgr)
 	r.POST("/api/room/:roomId/broadcast", hd2)
 	fmt.Println("路由注册成功！")
 
