@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/time/rate"
 
+	config "github.com/alac/se-go-ws-gateway-2026/internal/config"
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
 	ratelimit "github.com/alac/se-go-ws-gateway-2026/internal/middleware"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
@@ -22,6 +24,12 @@ import (
 
 func main() {
 	serverInitTime := time.Now()
+
+	cfg, err := config.LoadConfig("configs/config.toml")
+
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
 
 	r := gin.Default()
 
@@ -34,18 +42,18 @@ func main() {
 
 	// 1. 初始化核心层（顺序：RoomManager -> ClientManager -> MessageRouter）
 	roomMgr := service.NewRoomManager()
-	clientMgr := service.NewClientManager(roomMgr)
+	clientMgr := service.NewClientManager(roomMgr, cfg.Channel.RegisterBufferSize, cfg.Channel.UnregisterBufferSize)
 	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
-	lm := limiter.NewLimiterMap(rate.Every(12*time.Second), 5)
+	lm := limiter.NewLimiterMap(rate.Every(cfg.RateLimitInterval()), cfg.Ratelimit.Burst)
 	md1 := ratelimit.HandleRateLimit(lm)
 
 	api := r.Group("/api", md1)
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
-	go clientMgr.Init()
+	go clientMgr.Init(cfg.ControlWriteTimeout())
 
 	// 2. WebSocket 路由，传入 clientMgr
-	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg)
+	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg, cfg)
 	r.GET("/ws", hd)
 	fmt.Println("路由注册成功！")
 
@@ -71,7 +79,7 @@ func main() {
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	fmt.Println("路由注册成功！")
 
-	httpSvr := http.Server{Addr: ":8080", Handler: r}
+	httpSvr := http.Server{Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: r}
 
 	go httpSvr.ListenAndServe()
 
@@ -80,7 +88,7 @@ func main() {
 
 		cancel()              // 传递上下文
 		httpSvr.Shutdown(ctx) // 关闭 HTTP Server
-		clientMgr.Shutdown(5)
+		clientMgr.Shutdown(cfg.ShutdownTimeout(), cfg.ControlWriteTimeout())
 		wg.Wait()
 	}
 }

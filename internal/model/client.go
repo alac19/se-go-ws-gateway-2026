@@ -17,12 +17,12 @@ type Client struct {
 	mu       sync.Mutex      // 保护 Conn 的写操作
 }
 
-func NewClient(clientID, roomID string, conn *websocket.Conn, lastPong time.Time) *Client {
+func NewClient(clientID, roomID string, conn *websocket.Conn, sendBufferSize int, lastPong time.Time) *Client {
 	return &Client{
 		ClientID: clientID,
 		RoomID:   roomID,
 		Conn:     conn,
-		SendChan: make(chan []byte, 256),
+		SendChan: make(chan []byte, sendBufferSize),
 		LastPong: lastPong,
 	}
 }

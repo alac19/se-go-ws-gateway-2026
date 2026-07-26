@@ -3,6 +3,7 @@ module github.com/alac/se-go-ws-gateway-2026
 go 1.26.4
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gorilla/websocket v1.5.3
