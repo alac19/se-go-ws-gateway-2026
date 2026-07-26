@@ -14,20 +14,26 @@ import (
 
 // ClientManager 连接管理器（CSP 模型：通过 channel 通信），并发安全使用sync.Map
 type ClientManager struct {
-	clients    sync.Map
-	register   chan *model.Client
-	unregister chan string
-	roomMgr    *RoomManager
+	clients      sync.Map
+	register     chan *model.Client
+	unregister   chan string
+	roomMgr      *RoomManager
+	shuttingDown bool
 }
 
 // NewClientManager 创建连接管理器实例，注入房间管理器
-func NewClientManager(roomMgr *RoomManager) *ClientManager {
+func NewClientManager(roomMgr *RoomManager, registerBufferSize, unregisterBufferSize int) *ClientManager {
 	return &ClientManager{
 		clients:    sync.Map{},
-		register:   make(chan *model.Client, 256),
-		unregister: make(chan string, 256),
+		register:   make(chan *model.Client, registerBufferSize),
+		unregister: make(chan string, unregisterBufferSize),
 		roomMgr:    roomMgr,
 	}
+}
+
+// 提供导出方法供外部读取
+func (cm *ClientManager) IsShuttingDown() bool {
+	return cm.shuttingDown
 }
 
 // Register 向 register 通道发送注册事件（非阻塞）
@@ -40,7 +46,7 @@ func (cm *ClientManager) Unregister(clientID string) {
 	cm.unregister <- clientID
 }
 
-func (cm *ClientManager) Init() {
+func (cm *ClientManager) Init(controlWriteTimeout time.Duration) {
 	for {
 		select {
 		case client := <-cm.register:
@@ -49,7 +55,7 @@ func (cm *ClientManager) Init() {
 			if loaded {
 				err := client.Conn.WriteControl(websocket.CloseMessage,
 					websocket.FormatCloseMessage(4002, "clientId already exists"),
-					time.Now().Add(1*time.Second))
+					time.Now().Add(controlWriteTimeout))
 
 				if err != nil {
 					log.Printf("发送关闭帧失败: %v", err)
@@ -120,15 +126,16 @@ func (cm *ClientManager) GetOnlineCount() int {
 	return count
 }
 
-func (cm *ClientManager) Shutdown(gracePeriod int) {
+func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration) {
+	cm.shuttingDown = true
 	clients := make([]*model.Client, 0, cm.GetOnlineCount())
-	forceCloseTicker := time.After(time.Duration(gracePeriod) * time.Second)
+	forceCloseTicker := time.After(gracePeriod)
 
 	cm.Range(func(key, value any) bool {
 		client := value.(*model.Client)
 		client.Lock()
-		_ = client.Conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(1000, ""))
+		_ = client.Conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(controlWriteTimeout))
 		client.Unlock()
 		clients = append(clients, client)
 
