@@ -3,6 +3,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -70,6 +72,39 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+func (c *Config) ApplyEnvOverrides() {
+	if v := os.Getenv("WS_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Server.Port = port
+		}
+	}
+	if v := os.Getenv("WS_PING_INTERVAL"); v != "" {
+		if pingInternal, err := strconv.Atoi(v); err == nil {
+			c.Heartbeat.PingIntervalSeconds = pingInternal
+		}
+	}
+	if v := os.Getenv("WS_PONG_WAIT"); v != "" {
+		if pongWait, err := strconv.Atoi(v); err == nil {
+			c.Heartbeat.PongWaitSeconds = pongWait
+		}
+	}
+	if v := os.Getenv("WS_RATELIMIT_INTERVAL"); v != "" {
+		if ratelimitInternal, err := strconv.Atoi(v); err == nil {
+			c.Ratelimit.EverySeconds = ratelimitInternal
+		}
+	}
+	if v := os.Getenv("WS_BURST"); v != "" {
+		if burst, err := strconv.Atoi(v); err == nil {
+			c.Ratelimit.Burst = burst
+		}
+	}
+	if v := os.Getenv("WS_SHUTDOWN_TIMEOUT"); v != "" {
+		if shutdownTimeout, err := strconv.Atoi(v); err == nil {
+			c.GracefulShutdown.TimeoutSeconds = shutdownTimeout
+		}
+	}
 }
 
 // Validate 校验配置项的合法性。

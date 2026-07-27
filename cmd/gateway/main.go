@@ -31,6 +31,8 @@ func main() {
 		log.Fatalf("加载配置失败: %v", err)
 	}
 
+	cfg.ApplyEnvOverrides()
+
 	r := gin.Default()
 
 	var wg sync.WaitGroup
@@ -84,10 +86,12 @@ func main() {
 	go httpSvr.ListenAndServe()
 
 	if s := <-quit; s != nil { // 收到信号
-		fmt.Println("优雅退出!")
+		// fmt.Println("优雅退出!")
+		log.Printf("优雅退出", time.Now().Format("15:04:05"))
 
 		cancel()              // 传递上下文
 		httpSvr.Shutdown(ctx) // 关闭 HTTP Server
+		log.Printf("优雅退出，宽限期: %v", cfg.ShutdownTimeout())
 		clientMgr.Shutdown(cfg.ShutdownTimeout(), cfg.ControlWriteTimeout())
 		wg.Wait()
 	}
