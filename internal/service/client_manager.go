@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -58,7 +59,7 @@ func (cm *ClientManager) Init(controlWriteTimeout time.Duration) {
 					time.Now().Add(controlWriteTimeout))
 
 				if err != nil {
-					log.Printf("发送关闭帧失败: %v", err)
+					slog.Error("发送关闭帧失败", "clientId", client.ClientID, "error", err)
 				}
 
 				_ = client.Conn.Close()
@@ -135,8 +136,13 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 	cm.Range(func(key, value any) bool {
 		client := value.(*model.Client)
 		client.Lock()
-		_ = client.Conn.WriteControl(websocket.CloseMessage,
+		err := client.Conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(controlWriteTimeout))
+
+		if err != nil {
+			slog.Error("发送关闭帧失败", "error", err)
+		}
+
 		client.Unlock()
 		clients = append(clients, client)
 

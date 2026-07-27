@@ -24,3 +24,7 @@ burst = 5
 
 [graceful_shutdown]
 timeout_seconds = 5
+
+[log]
+level = "info"    
+file_path = "logs/gateway.log" 
