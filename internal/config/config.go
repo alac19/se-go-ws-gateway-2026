@@ -18,6 +18,7 @@ type Config struct {
 	Channel          Channel          `toml:"channel"`
 	Ratelimit        Ratelimit        `toml:"ratelimit"`
 	GracefulShutdown GracefulShutdown `toml:"graceful_shutdown"`
+	Log              Log              `toml:"log"`
 }
 
 // Server 定义 HTTP 服务器配置。
@@ -57,6 +58,12 @@ type Ratelimit struct {
 // GracefulShutdown 定义优雅退出配置。
 type GracefulShutdown struct {
 	TimeoutSeconds int `toml:"timeout_seconds"` // 关闭等待宽限期（秒）
+}
+
+// Log 定义日志配置。
+type Log struct {
+	Level    string `toml:"level"`     // 日志级别（debug, info, warn, error）
+	FilePath string `toml:"file_path"` // 日志文件路径，为空则只输出到控制台
 }
 
 // LoadConfig 从指定路径加载 TOML 配置文件，并校验配置合法性。

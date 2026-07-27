@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +21,7 @@ import (
 	ratelimit "github.com/alac/se-go-ws-gateway-2026/internal/middleware"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
+	logger "github.com/alac/se-go-ws-gateway-2026/pkg/logger"
 )
 
 func main() {
@@ -28,10 +30,18 @@ func main() {
 	cfg, err := config.LoadConfig("configs/config.toml")
 
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		slog.Error("加载配置失败", "error", err)
+		os.Exit(1)
 	}
 
 	cfg.ApplyEnvOverrides()
+
+	if err := logger.Init(cfg.Log.Level, cfg.Log.FilePath); err != nil {
+		slog.Error("初始化日志失败", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("日志系统初始化成功", "level", cfg.Log.Level, "file", cfg.Log.FilePath)
 
 	r := gin.Default()
 
@@ -86,11 +96,14 @@ func main() {
 	go httpSvr.ListenAndServe()
 
 	if s := <-quit; s != nil { // 收到信号
-		// fmt.Println("优雅退出!")
-		log.Printf("优雅退出", time.Now().Format("15:04:05"))
+		slog.Info("收到终止信号，开始优雅退出")
 
-		cancel()              // 传递上下文
-		httpSvr.Shutdown(ctx) // 关闭 HTTP Server
+		cancel() // 传递上下文
+
+		if err := httpSvr.Shutdown(ctx); err != nil { // 关闭 HTTP Server
+			slog.Error("HTTP 服务器关闭失败", "error", err)
+		}
+
 		log.Printf("优雅退出，宽限期: %v", cfg.ShutdownTimeout())
 		clientMgr.Shutdown(cfg.ShutdownTimeout(), cfg.ControlWriteTimeout())
 		wg.Wait()

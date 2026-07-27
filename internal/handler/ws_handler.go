@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sync"
@@ -34,7 +35,7 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 
 		if err != nil {
-			log.Printf("WebSocket 升级失败: %v", err)
+			slog.Error("WebSocket 升级失败", "error", err)
 
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":   500,
@@ -50,14 +51,14 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		roomID := c.Query("roomId")
 
 		if clientID == "" || roomID == "" {
-			log.Printf("参数缺失: clientId=%q, roomId=%q", clientID, roomID)
+			slog.Warn("参数缺失", "clientId", clientID, "roomId", roomID)
 
 			err := conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(4000, "clientId and roomId are required"),
 				time.Now().Add(cfg.ControlWriteTimeout()))
 
 			if err != nil {
-				log.Printf("发送关闭帧失败: %v", err)
+				slog.Error("发送关闭帧失败", "error", err)
 			}
 
 			_ = conn.Close()
@@ -66,14 +67,14 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		}
 
 		if !validIDPattern.MatchString(clientID) {
-			log.Printf("clientId 包含非法字符: %q", clientID)
+			slog.Warn("clientId 包含非法字符", "clientId", clientID)
 
 			err := conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(4001, "invalid clientId format"),
 				time.Now().Add(cfg.ControlWriteTimeout()))
 
 			if err != nil {
-				log.Printf("发送关闭帧失败: %v", err)
+				slog.Error("发送关闭帧失败", "error", err)
 			}
 
 			_ = conn.Close()
@@ -82,14 +83,14 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		}
 
 		if !validIDPattern.MatchString(roomID) {
-			log.Printf("roomID 包含非法字符: %q", roomID)
+			slog.Warn("roomID 包含非法字符", "roomID", roomID)
 
 			err := conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(4001, "invalid roomID format"),
 				time.Now().Add(cfg.ControlWriteTimeout()))
 
 			if err != nil {
-				log.Printf("发送关闭帧失败: %v", err)
+				slog.Error("发送关闭帧失败", "error", err)
 			}
 
 			_ = conn.Close()
@@ -98,14 +99,14 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		}
 
 		if _, res := clientMgr.Get(clientID); res {
-			log.Printf("clientId 已存在: clientId=%q", clientID)
+			slog.Warn("clientId 已存在，拒绝连接", "clientId", clientID)
 
 			err := conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(4002, "clientId already exists"),
 				time.Now().Add(cfg.ControlWriteTimeout()))
 
 			if err != nil {
-				log.Printf("发送关闭帧失败: %v", err)
+				slog.Error("发送关闭帧失败", "error", err)
 			}
 
 			_ = conn.Close()
@@ -141,7 +142,7 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 	ticker := time.NewTicker(pingInterval)
 	defer func() {
 		if p := recover(); p != nil {
-			log.Printf("internal error: %v", p)
+			slog.Error("panic 恢复", "error", p)
 		}
 
 		wg.Done()
@@ -165,7 +166,7 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 			client.Unlock()
 
 			if err != nil {
-				log.Printf("writePump error: %v", err)
+				slog.Error("writePump 写入失败", "clientId", client.ClientID, "error", err)
 				return
 			}
 		case <-ticker.C:
@@ -187,12 +188,17 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.WaitGroup, pongWait, controlWriteTimeout time.Duration) {
 	defer func() {
 		if p := recover(); p != nil {
-			log.Printf("internal error: %v", p)
+			slog.Error("panic 恢复", "error", p)
 		}
 		if !clientMgr.IsShuttingDown() {
 			// 发送关闭帧通知客户端
-			_ = client.Conn.WriteControl(websocket.CloseMessage,
+			err := client.Conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(controlWriteTimeout))
+
+			if err != nil {
+				slog.Error("发送关闭帧失败", "error", err)
+			}
+
 			// 连接断开时，通知连接池注销
 			clientMgr.Unregister(client.ClientID)
 		}
@@ -205,7 +211,7 @@ func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.W
 		_, _, err := client.Conn.ReadMessage()
 
 		if err != nil {
-			log.Printf("readPump error: %v", err)
+			slog.Error("readPump 读取失败", "clientId", client.ClientID, "error", err)
 			return
 		}
 
