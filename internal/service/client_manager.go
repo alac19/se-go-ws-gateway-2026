@@ -127,6 +127,7 @@ func (cm *ClientManager) GetOnlineCount() int {
 }
 
 func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration) {
+	log.Printf("Shutdown 开始，宽限期: %v", gracePeriod)
 	cm.shuttingDown = true
 	clients := make([]*model.Client, 0, cm.GetOnlineCount())
 	forceCloseTicker := time.After(gracePeriod)
@@ -142,9 +143,32 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 		return true
 	})
 
+	log.Printf("发送关闭帧完成，开始等待宽限期")
 	<-forceCloseTicker
+	log.Printf("宽限期结束，开始 Unregister")
 
 	for _, client := range clients {
-		cm.Unregister(client.ClientID)
+		metrics.OnlineConnGauge.Dec()
+		metrics.ConnEventTotal.Inc()
+		val, ok := cm.clients.LoadAndDelete(client.ClientID)
+
+		if !ok {
+			continue
+		}
+
+		client := val.(*model.Client)
+
+		// 关闭发送通道
+		close(client.SendChan)
+
+		// 从所有房间移除
+		if cm.roomMgr != nil {
+			cm.roomMgr.RemoveClientFromAllRooms(client.ClientID)
+		}
+
+		// 关闭 WebSocket 连接
+		_ = client.Conn.Close()
+
+		fmt.Printf("注销成功: clientID=%s\n", client.ClientID)
 	}
 }
