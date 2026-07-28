@@ -91,6 +91,11 @@ func main() {
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	fmt.Println("路由注册成功！")
 
+	// 6. 健康检查端点
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
 	httpSvr := http.Server{Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: r}
 
 	go httpSvr.ListenAndServe()
