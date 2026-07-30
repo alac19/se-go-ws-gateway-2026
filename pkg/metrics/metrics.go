@@ -2,47 +2,67 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// 消息发送总量，区分single/room/broadcast
-var MsgSendTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "ws_gateway_msg_sent_total",
-		Help: "网关推送消息总次数",
-	},
-	[]string{"msg_type"},
+var (
+	// 消息发送总量，区分single/room/broadcast
+	MsgSendTotal *prometheus.CounterVec
+	// 消息发送失败计数器
+	MsgSendFail *prometheus.CounterVec
+	// 消息接收总量
+	MsgRecvTotal prometheus.Counter
+	// 当前在线连接数
+	OnlineConnGauge prometheus.Gauge
+	// 连接建立/关闭事件计数
+	ConnEventTotal prometheus.Counter
 )
 
-// 消息发送失败计数器
-var MsgSendFail = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "ws_gateway_msg_send_fail_total",
-		Help: "网关推送消息失败次数",
-	},
-	[]string{"reason"},
-)
+// Init 初始化所有指标，并注册到指定的注册器。
+// 如果 reg 为 nil，则使用默认注册器（prometheus.DefaultRegisterer）。
+func Init(reg prometheus.Registerer) {
+	if reg == nil {
+		reg = prometheus.DefaultRegisterer
+	}
 
-// 消息接收总量
-var MsgRecvTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "ws_messages_received_total",
-		Help: "网关接收消息总次数",
-	},
-)
+	MsgSendTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ws_gateway_msg_sent_total",
+			Help: "网关推送消息总次数",
+		},
+		[]string{"msg_type"},
+	)
+	reg.MustRegister(MsgSendTotal)
 
-// 当前在线连接数
-var OnlineConnGauge = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "ws_active_connections",
-		Help: "当前在线WebSocket长连接数量",
-	},
-)
+	MsgSendFail = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ws_gateway_msg_send_fail_total",
+			Help: "网关推送消息失败次数",
+		},
+		[]string{"reason"},
+	)
+	reg.MustRegister(MsgSendFail)
 
-// 连接建立/关闭事件计数
-var ConnEventTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "ws_connection_events_total",
-		Help: "网关Websocket长连接建立/关闭事件总数",
-	},
-)
+	MsgRecvTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ws_messages_received_total",
+			Help: "网关接收消息总次数",
+		},
+	)
+	reg.MustRegister(MsgRecvTotal)
+
+	OnlineConnGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "ws_active_connections",
+			Help: "当前在线WebSocket长连接数量",
+		},
+	)
+	reg.MustRegister(OnlineConnGauge)
+
+	ConnEventTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ws_connection_events_total",
+			Help: "网关Websocket长连接建立/关闭事件总数",
+		},
+	)
+	reg.MustRegister(ConnEventTotal)
+}
