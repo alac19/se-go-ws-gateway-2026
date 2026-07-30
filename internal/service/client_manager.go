@@ -165,13 +165,14 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 	log.Printf("宽限期结束，开始 Unregister")
 
 	for _, client := range clients {
-		metrics.OnlineConnGauge.Dec()
-		metrics.ConnEventTotal.Inc()
 		val, ok := cm.clients.LoadAndDelete(client.ClientID)
 
 		if !ok {
 			continue
 		}
+
+		metrics.OnlineConnGauge.Dec()
+		metrics.ConnEventTotal.Inc()
 
 		client := val.(*model.Client)
 
