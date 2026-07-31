@@ -159,7 +159,7 @@ func TestInitAndGaugeValue(t *testing.T) {
 	}
 }
 
-// getGaugeValue 从注册器中获取指定名称的 Gauge 指标值。
+// getCounterValue 从注册器中获取指定名称的 Counter 指标值。
 func getCounterValue(reg prometheus.Gatherer, name string) (float64, error) {
 	mfs, err := reg.Gather()
 
@@ -200,14 +200,14 @@ func TestInitAndCounterValue(t *testing.T) {
 		t.Errorf("期望初始值为 0, 得到 %v", val)
 	}
 
-	metrics.ConnEventTotal.Add(5)
+	metrics.ConnEventTotal.Inc()
 	val, err = getCounterValue(reg, "ws_connection_events_total")
 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if val != 5 {
-		t.Errorf("期望值为 5, 得到 %v", val)
+	if val != 1 {
+		t.Errorf("期望值为 1, 得到 %v", val)
 	}
 }
 
@@ -228,7 +228,7 @@ func TestInit(t *testing.T) {
 		client := model.NewClient("test1", "room1", nil, 5, time.Now())
 
 		cm.Register(client)
-		time.Sleep(50 * time.Millisecond)
+		waitForClients(t, cm, 1, waitTimeout)
 
 		got, ok := cm.Get("test1")
 
@@ -291,7 +291,7 @@ func TestInit(t *testing.T) {
 		client1 := model.NewClient("test2", "room2", nil, 5, time.Now())
 
 		cm.Register(client1)
-		time.Sleep(50 * time.Millisecond)
+		waitForClients(t, cm, 1, waitTimeout)
 
 		val, err := getCounterValue(reg, "ws_connection_events_total")
 
@@ -304,7 +304,7 @@ func TestInit(t *testing.T) {
 
 		client2 := model.NewClient("test2", "room2", nil, 5, time.Now())
 		cm.Register(client2)
-		time.Sleep(50 * time.Millisecond)
+		waitForClients(t, cm, 1, waitTimeout)
 
 		if cm.GetOnlineCount() != 1 {
 			t.Errorf("期望在线连接数仍为 1, 得到 %d", cm.GetOnlineCount())
@@ -345,13 +345,9 @@ func TestInit(t *testing.T) {
 		client := model.NewClient("test3", "room1", nil, 5, time.Now())
 
 		cm.Register(client)
-		time.Sleep(50 * time.Millisecond)
+		waitForClients(t, cm, 1, waitTimeout)
 		cm.Unregister(client.ClientID)
-		time.Sleep(50 * time.Millisecond)
-
-		if _, ok := cm.Get("test3"); ok {
-			t.Error("test3 应该已被注销")
-		}
+		waitForClientRemoved(t, cm, "test3", waitTimeout)
 
 		val, err := getGaugeValue(reg, "ws_active_connections")
 
@@ -401,9 +397,9 @@ func TestInit(t *testing.T) {
 		client := model.NewClient("test4", "room4", nil, 5, time.Now())
 
 		cm.Register(client)
-		time.Sleep(50 * time.Millisecond)
+		waitForClients(t, cm, 1, waitTimeout)
 		cm.Unregister("test999")
-		time.Sleep(50 * time.Millisecond)
+		waitForClients(t, cm, 1, waitTimeout)
 
 		val, err := getGaugeValue(reg, "ws_active_connections")
 
