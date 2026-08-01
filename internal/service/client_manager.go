@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"log/slog"
@@ -47,22 +48,24 @@ func (cm *ClientManager) Unregister(clientID string) {
 	cm.unregister <- clientID
 }
 
-func (cm *ClientManager) Init(controlWriteTimeout time.Duration) {
+func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Duration) {
 	for {
 		select {
 		case client := <-cm.register:
 			_, loaded := cm.clients.LoadOrStore(client.ClientID, client)
 
 			if loaded {
-				err := client.Conn.WriteControl(websocket.CloseMessage,
-					websocket.FormatCloseMessage(4002, "clientId already exists"),
-					time.Now().Add(controlWriteTimeout))
+				if client.Conn != nil {
+					err := client.Conn.WriteControl(websocket.CloseMessage,
+						websocket.FormatCloseMessage(4002, "clientId already exists"),
+						time.Now().Add(controlWriteTimeout))
 
-				if err != nil {
-					slog.Error("发送关闭帧失败", "clientId", client.ClientID, "error", err)
+					if err != nil {
+						slog.Error("发送关闭帧失败", "clientId", client.ClientID, "error", err)
+					}
+
+					_ = client.Conn.Close()
 				}
-
-				_ = client.Conn.Close()
 
 				continue
 			}
@@ -76,13 +79,14 @@ func (cm *ClientManager) Init(controlWriteTimeout time.Duration) {
 
 			fmt.Printf("注册成功: clientID=%s, roomID=%s\n", client.ClientID, client.RoomID)
 		case clientID := <-cm.unregister:
-			metrics.OnlineConnGauge.Dec()
-			metrics.ConnEventTotal.Inc()
 			val, ok := cm.clients.LoadAndDelete(clientID)
 
 			if !ok {
 				continue
 			}
+
+			metrics.OnlineConnGauge.Dec()
+			metrics.ConnEventTotal.Inc()
 
 			client := val.(*model.Client)
 
@@ -94,10 +98,14 @@ func (cm *ClientManager) Init(controlWriteTimeout time.Duration) {
 				cm.roomMgr.RemoveClientFromAllRooms(clientID)
 			}
 
-			// 关闭 WebSocket 连接
-			_ = client.Conn.Close()
+			if client.Conn != nil {
+				// 关闭 WebSocket 连接
+				_ = client.Conn.Close()
+			}
 
 			fmt.Printf("注销成功: clientID=%s\n", clientID)
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -136,11 +144,14 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 	cm.Range(func(key, value any) bool {
 		client := value.(*model.Client)
 		client.Lock()
-		err := client.Conn.WriteControl(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(controlWriteTimeout))
 
-		if err != nil {
-			slog.Error("发送关闭帧失败", "error", err)
+		if client.Conn != nil {
+			err := client.Conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+				time.Now().Add(controlWriteTimeout))
+			if err != nil {
+				slog.Error("发送关闭帧失败", "error", err)
+			}
 		}
 
 		client.Unlock()
@@ -154,13 +165,14 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 	log.Printf("宽限期结束，开始 Unregister")
 
 	for _, client := range clients {
-		metrics.OnlineConnGauge.Dec()
-		metrics.ConnEventTotal.Inc()
 		val, ok := cm.clients.LoadAndDelete(client.ClientID)
 
 		if !ok {
 			continue
 		}
+
+		metrics.OnlineConnGauge.Dec()
+		metrics.ConnEventTotal.Inc()
 
 		client := val.(*model.Client)
 
@@ -172,8 +184,10 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 			cm.roomMgr.RemoveClientFromAllRooms(client.ClientID)
 		}
 
-		// 关闭 WebSocket 连接
-		_ = client.Conn.Close()
+		if client.Conn != nil {
+			// 关闭 WebSocket 连接
+			_ = client.Conn.Close()
+		}
 
 		fmt.Printf("注销成功: clientID=%s\n", client.ClientID)
 	}

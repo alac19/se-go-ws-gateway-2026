@@ -22,6 +22,7 @@ import (
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
 	logger "github.com/alac/se-go-ws-gateway-2026/pkg/logger"
+	metrics "github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
 )
 
 func main() {
@@ -52,6 +53,8 @@ func main() {
 
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM) // 监听信号
 
+	metrics.Init(nil)
+
 	// 1. 初始化核心层（顺序：RoomManager -> ClientManager -> MessageRouter）
 	roomMgr := service.NewRoomManager()
 	clientMgr := service.NewClientManager(roomMgr, cfg.Channel.RegisterBufferSize, cfg.Channel.UnregisterBufferSize)
@@ -62,7 +65,7 @@ func main() {
 	api := r.Group("/api", md1)
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
-	go clientMgr.Init(cfg.ControlWriteTimeout())
+	go clientMgr.Init(context.Background(), cfg.ControlWriteTimeout())
 
 	// 2. WebSocket 路由，传入 clientMgr
 	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg, cfg)
