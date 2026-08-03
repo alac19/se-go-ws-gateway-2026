@@ -2,8 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -29,8 +27,6 @@ var validIDPattern = regexp.MustCompile("^[a-zA-Z0-9_-]+$")
 // HandlerConnManagement WebSocket 接入：协议升级、连接注册、心跳保活
 func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context, wg *sync.WaitGroup, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("进入 handler 层 —— WebSocket 接入...")
-
 		// 升级 HTTP 为 WebSocket 连接
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 
@@ -42,6 +38,20 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 				"status": "error",
 				"error":  "WebSocket 协议升级失败",
 			})
+
+			return
+		}
+
+		if clientMgr.IsShuttingDown() {
+			err := conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(1001, "service is shutting down"),
+				time.Now().Add(cfg.ControlWriteTimeout()))
+
+			if err != nil {
+				slog.Error("发送关闭帧失败", "error", err)
+			}
+
+			_ = conn.Close()
 
 			return
 		}
@@ -125,8 +135,6 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		conn.SetPongHandler(func(appData string) error {
 			client.LastPong = time.Now()
 
-			log.Printf("[心跳] 客户端 %s 收到 Pong，LastPong 更新为 %s", client.ClientID, client.LastPong.Format("15:04:05"))
-
 			return conn.SetReadDeadline(time.Now().Add(cfg.ReadDeadline()))
 		})
 
@@ -149,14 +157,10 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 		ticker.Stop()
 	}()
 
-	log.Printf("[心跳] 客户端 %s writePump 启动，Ping 定时器已开启 (间隔 30s)", client.ClientID)
-
 	for {
 		select {
 		case msg, ok := <-client.SendChan:
 			if !ok {
-				// SendChan 已关闭，退出
-				log.Printf("[心跳] 客户端 %s SendChan 已关闭，writePump 退出", client.ClientID)
 				return
 			}
 
@@ -170,12 +174,11 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 				return
 			}
 		case <-ticker.C:
-			log.Printf("[心跳] 客户端 %s 发送 Ping 帧 (时间: %s)", client.ClientID, time.Now().Format("15:04:05"))
 			_ = client.Conn.SetWriteDeadline(time.Now().Add(writeDeadline))
 			err := client.Conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(pingWriteTimeout))
 
 			if err != nil {
-				log.Printf("writePump ping error: %v", err)
+				slog.Error("发送 ping 帧失败", "error", err)
 				return
 			}
 		case <-ctx.Done():
@@ -204,7 +207,6 @@ func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.W
 		}
 
 		wg.Done()
-		log.Printf("[心跳] 客户端 %s readPump 退出，连接已注销", client.ClientID)
 	}()
 
 	for {
@@ -218,7 +220,6 @@ func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.W
 		metrics.MsgRecvTotal.Inc()
 
 		if time.Since(client.LastPong) > pongWait {
-			log.Printf("[心跳] 客户端 %s Pong 超时 (LastPong: %s)，连接失活!", client.ClientID, client.LastPong.Format("15:04:05"))
 			return
 		}
 	}

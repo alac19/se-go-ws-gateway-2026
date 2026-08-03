@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,8 +13,6 @@ import (
 // HandleBroadcast 全服广播：读取请求体 JSON 并推送给所有在线客户端
 func HandleBroadcast(router *service.MessageRouter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("进入 handler 层 —— 全服广播")
-
 		// 读取请求体 JSON
 		body, err := c.GetRawData()
 
@@ -37,8 +34,6 @@ func HandleBroadcast(router *service.MessageRouter) gin.HandlerFunc {
 		msg := &model.Message{Payload: body}
 		router.SendBroadcast(msg)
 
-		fmt.Printf("全服广播完成，消息大小: %d bytes\n", len(body))
-
 		c.JSON(200, gin.H{"code": 0, "status": "success", "data": nil})
 	}
 }
@@ -46,8 +41,6 @@ func HandleBroadcast(router *service.MessageRouter) gin.HandlerFunc {
 // HandleRoomBroadcast 房间广播：读取请求体 JSON 并推送给指定房间的所有客户端
 func HandleRoomBroadcast(router *service.MessageRouter, roomMgr *service.RoomManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("进入 handler 层 —— 房间广播")
-
 		// 读取请求体 JSON
 		body, err := c.GetRawData()
 
@@ -83,8 +76,6 @@ func HandleRoomBroadcast(router *service.MessageRouter, roomMgr *service.RoomMan
 		msg := &model.Message{Payload: body}
 		router.SendRoom(roomId, msg)
 
-		fmt.Printf("房间广播完成，roomId=%s，消息大小: %d bytes\n", roomId, len(body))
-
 		c.JSON(200, gin.H{"code": 0, "status": "success", "data": nil})
 	}
 }
@@ -92,8 +83,6 @@ func HandleRoomBroadcast(router *service.MessageRouter, roomMgr *service.RoomMan
 // HandleClientSend 单播推送：读取请求体 JSON 并推送给指定客户端
 func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("进入 handler 层 —— 单播")
-
 		// 读取请求体 JSON
 		body, err := c.GetRawData()
 
@@ -127,8 +116,6 @@ func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 			return
 		}
 
-		fmt.Printf("单播完成，clientId=%s，消息大小: %d bytes\n", clientId, len(body))
-
 		c.JSON(200, gin.H{"code": 0, "status": "success", "data": nil})
 	}
 }
@@ -136,8 +123,6 @@ func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 // HandleStats 连接统计：返回当前网关在线连接数
 func HandleStats(clientMgr *service.ClientManager, roomMgr *service.RoomManager, svrInitTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("进入 handler 层 —— 连接管理统计信息")
-
 		res1 := clientMgr.GetOnlineCount()
 		res2 := roomMgr.GetAllRoomsConnStats()
 
