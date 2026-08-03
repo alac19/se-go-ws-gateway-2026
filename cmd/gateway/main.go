@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -44,7 +43,8 @@ func main() {
 
 	slog.Info("日志系统初始化成功", "level", cfg.Log.Level, "file", cfg.Log.FilePath)
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
 
 	var wg sync.WaitGroup
 
@@ -65,34 +65,28 @@ func main() {
 	api := r.Group("/api", md1)
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
-	go clientMgr.Init(context.Background(), cfg.ControlWriteTimeout())
+	go clientMgr.Init(ctx, cfg.ControlWriteTimeout())
 
 	// 2. WebSocket 路由，传入 clientMgr
 	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg, cfg)
 	r.GET("/ws", hd)
-	fmt.Println("路由注册成功！")
 
 	// 3. 推送类接口，传入 messageRouter
 	hd1 := handler.HandleBroadcast(router)
 	api.POST("/broadcast", hd1)
-	fmt.Println("路由注册成功！")
 
 	hd2 := handler.HandleRoomBroadcast(router, roomMgr)
 	api.POST("/room/:roomId/broadcast", hd2)
-	fmt.Println("路由注册成功！")
 
 	hd3 := handler.HandleClientSend(router)
 	api.POST("/client/:clientId/send", hd3)
-	fmt.Println("路由注册成功！")
 
 	// 4. 统计接口，传入 clientMgr
 	hd4 := handler.HandleStats(clientMgr, roomMgr, serverInitTime)
 	api.GET("/stats", hd4)
-	fmt.Println("路由注册成功！")
 
 	// 5. /metrics 端点
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
-	fmt.Println("路由注册成功！")
 
 	// 6. 健康检查端点
 	r.GET("/health", func(c *gin.Context) {
@@ -112,7 +106,6 @@ func main() {
 			slog.Error("HTTP 服务器关闭失败", "error", err)
 		}
 
-		log.Printf("优雅退出，宽限期: %v", cfg.ShutdownTimeout())
 		clientMgr.Shutdown(cfg.ShutdownTimeout(), cfg.ControlWriteTimeout())
 		wg.Wait()
 	}

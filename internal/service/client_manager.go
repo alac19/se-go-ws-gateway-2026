@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"log/slog"
 	"sync"
 	"time"
@@ -61,7 +59,7 @@ func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Dura
 						time.Now().Add(controlWriteTimeout))
 
 					if err != nil {
-						slog.Error("发送关闭帧失败", "clientId", client.ClientID, "error", err)
+						slog.Error("发送关闭帧失败", "error", err)
 					}
 
 					_ = client.Conn.Close()
@@ -76,8 +74,6 @@ func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Dura
 			if client.RoomID != "" && cm.roomMgr != nil {
 				cm.roomMgr.Join(client.RoomID, client.ClientID)
 			}
-
-			fmt.Printf("注册成功: clientID=%s, roomID=%s\n", client.ClientID, client.RoomID)
 		case clientID := <-cm.unregister:
 			val, ok := cm.clients.LoadAndDelete(clientID)
 
@@ -103,7 +99,6 @@ func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Dura
 				_ = client.Conn.Close()
 			}
 
-			fmt.Printf("注销成功: clientID=%s\n", clientID)
 		case <-ctx.Done():
 			return
 		}
@@ -136,7 +131,6 @@ func (cm *ClientManager) GetOnlineCount() int {
 }
 
 func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration) {
-	log.Printf("Shutdown 开始，宽限期: %v", gracePeriod)
 	cm.shuttingDown = true
 	clients := make([]*model.Client, 0, cm.GetOnlineCount())
 	forceCloseTicker := time.After(gracePeriod)
@@ -160,9 +154,7 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 		return true
 	})
 
-	log.Printf("发送关闭帧完成，开始等待宽限期")
 	<-forceCloseTicker
-	log.Printf("宽限期结束，开始 Unregister")
 
 	for _, client := range clients {
 		val, ok := cm.clients.LoadAndDelete(client.ClientID)
@@ -188,7 +180,5 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 			// 关闭 WebSocket 连接
 			_ = client.Conn.Close()
 		}
-
-		fmt.Printf("注销成功: clientID=%s\n", client.ClientID)
 	}
 }
