@@ -31,6 +31,9 @@ go.work.sum
 logs/
 *.log
 
+# Test results output
+test_results/
+
 # Editor/IDE
 # .idea/
 # .vscode/

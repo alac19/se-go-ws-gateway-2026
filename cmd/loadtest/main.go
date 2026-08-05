@@ -54,6 +54,21 @@ func main() {
 
 			defer conn.Close()
 
+			// ticker := time.NewTicker(2 * time.Second)
+
+			// go func() {
+			// 	for {
+			// 		select {
+			// 		case <-ticker.C:
+			// 			err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"ping"}`))
+
+			// 			if err != nil {
+			// 				return
+			// 			}
+			// 		}
+			// 	}
+			// }()
+
 			// 读取服务端推送的消息（广播消息会通过这个通道到达）
 			for {
 				_, msg, err := conn.ReadMessage()
@@ -142,4 +157,6 @@ func main() {
 		fmt.Printf("最大延迟: %.2f ms\n", latencies[successCount-1])
 		fmt.Printf("平均延迟: %.2f ms\n", avg)
 	}
+
+	select {}
 }
