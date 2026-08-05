@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -13,10 +14,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"golang.org/x/time/rate"
 
 	config "github.com/alac/se-go-ws-gateway-2026/internal/config"
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
+
 	ratelimit "github.com/alac/se-go-ws-gateway-2026/internal/middleware"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
@@ -63,6 +66,7 @@ func main() {
 	md1 := ratelimit.HandleRateLimit(lm)
 
 	api := r.Group("/api", md1)
+	// api := r.Group("/api")
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
 	go clientMgr.Init(ctx, cfg.ControlWriteTimeout())
@@ -92,6 +96,12 @@ func main() {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	go func() {
+		if err := http.ListenAndServe(":6060", nil); err != nil {
+			slog.Error("pprof 服务启动失败", "error", err)
+		}
+	}()
 
 	httpSvr := http.Server{Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: r}
 
