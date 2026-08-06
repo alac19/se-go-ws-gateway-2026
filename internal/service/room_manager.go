@@ -1,3 +1,5 @@
+// Package service provides the core business logic for the WebSocket gateway.
+// It includes connection management, room management, and message routing.
 package service
 
 import (
@@ -10,6 +12,7 @@ type RoomManager struct {
 	rooms map[string]map[string]bool // roomId -> clientId集合
 }
 
+// NewRoomManager 创建房间管理器实例。
 func NewRoomManager() *RoomManager {
 	return &RoomManager{
 		rooms: make(map[string]map[string]bool),
@@ -69,6 +72,8 @@ func (rm *RoomManager) RemoveClientFromAllRooms(clientID string) {
 	}
 }
 
+// GetAllRoomsConnStats 获取所有房间的连接统计。
+// 返回 map[string]int, key 为 roomId, value 为该房间的在线客户端数。
 func (rm *RoomManager) GetAllRoomsConnStats() map[string]int {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
@@ -81,6 +86,8 @@ func (rm *RoomManager) GetAllRoomsConnStats() map[string]int {
 	return connStats
 }
 
+// HasRoom 检查指定房间是否存在（即是否有客户端在线）。
+// 返回 true 表示房间存在且至少有一个客户端。
 func (rm *RoomManager) HasRoom(roomID string) bool {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()

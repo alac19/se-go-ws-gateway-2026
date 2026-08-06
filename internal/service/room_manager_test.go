@@ -10,6 +10,7 @@ func TestGetClients(t *testing.T) {
 		roomMgr.Join("room1", "test1")
 
 		got := roomMgr.GetClients("room1")
+
 		if len(got) != 1 || got[0] != "test1" {
 			t.Errorf("期望 [test1], 得到 %v", got)
 		}
@@ -18,6 +19,7 @@ func TestGetClients(t *testing.T) {
 	t.Run("房间不存在", func(t *testing.T) {
 		roomMgr := NewRoomManager()
 		got := roomMgr.GetClients("room1")
+
 		if got != nil {
 			t.Errorf("期望 nil, 得到 %v", got)
 		}
@@ -36,6 +38,7 @@ func TestHasRoom(t *testing.T) {
 
 	t.Run("房间不存在", func(t *testing.T) {
 		roomMgr := NewRoomManager()
+
 		if roomMgr.HasRoom("room1") {
 			t.Error("期望 HasRoom 返回 false, 实际 true")
 		}
@@ -66,7 +69,9 @@ func TestJoin(t *testing.T) {
 				if !roomMgr.HasRoom(roomID) {
 					t.Errorf("期望房间 %s 存在, 实际不存在", roomID)
 				}
+
 				clients := roomMgr.GetClients(roomID)
+
 				if len(clients) != 1 || clients[0] != test.clientID {
 					t.Errorf("期望房间 %s 包含 %s, 实际 %v", roomID, test.clientID, clients)
 				}
@@ -96,6 +101,7 @@ func TestLeave(t *testing.T) {
 		roomMgr.Leave("room999", "test1") // 房间不存在，应无操作
 
 		clients := roomMgr.GetClients("room1")
+
 		if len(clients) != 1 || clients[0] != "test1" {
 			t.Errorf("期望 test1 仍在 room1, 实际 %v", clients)
 		}
@@ -193,6 +199,7 @@ func TestRemoveClientFromAllRooms(t *testing.T) {
 			// 验证被移除的客户端确实不在任何房间中
 			for _, roomID := range test.roomIDs {
 				clients := roomMgr.GetClients(roomID)
+
 				for _, c := range clients {
 					if c == test.removeClientID {
 						t.Errorf("客户端 %s 应被移除, 但仍在房间 %s 中", test.removeClientID, roomID)
@@ -219,6 +226,7 @@ func TestGetAllRoomsConnStats(t *testing.T) {
 		roomMgr.Join("room2", "test2")
 
 		got := roomMgr.GetAllRoomsConnStats()
+
 		if got["room1"] != 1 {
 			t.Errorf("期望 room1 连接数 1, 得到 %d", got["room1"])
 		}
@@ -230,6 +238,7 @@ func TestGetAllRoomsConnStats(t *testing.T) {
 	t.Run("不存在房间", func(t *testing.T) {
 		roomMgr := NewRoomManager()
 		got := roomMgr.GetAllRoomsConnStats()
+
 		if len(got) != 0 {
 			t.Errorf("期望空 map, 得到 %v", got)
 		}

@@ -1,3 +1,5 @@
+// Package main is the entry point for the WebSocket gateway service.
+// It initializes configuration, logging, metrics, and starts both HTTP and WebSocket servers.
 package main
 
 import (
@@ -14,12 +16,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"golang.org/x/time/rate"
 
 	config "github.com/alac/se-go-ws-gateway-2026/internal/config"
 	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
-
 	ratelimit "github.com/alac/se-go-ws-gateway-2026/internal/middleware"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
@@ -28,6 +28,7 @@ import (
 )
 
 func main() {
+	// 记录服务启动时间，用于统计接口计算运行时长
 	serverInitTime := time.Now()
 
 	cfg, err := config.LoadConfig("configs/config.toml")
@@ -66,7 +67,6 @@ func main() {
 	md1 := ratelimit.HandleRateLimit(lm)
 
 	api := r.Group("/api", md1)
-	// api := r.Group("/api")
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
 	go clientMgr.Init(ctx, cfg.ControlWriteTimeout())
