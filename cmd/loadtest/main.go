@@ -37,6 +37,7 @@ func main() {
 
 	for i := 0; i < *numConns; i++ {
 		wg.Add(1)
+		// 人为延迟 1 ms 避免瞬间连接数过大导致 Windows Accept 队列溢出
 		time.Sleep(1 * time.Millisecond)
 
 		go func(id int) {
@@ -113,11 +114,7 @@ func main() {
 
 	time.Sleep(3 * time.Second)
 
-	// 5. 关闭所有连接（通过 close 所有客户端的 conn，这里我们通过程序结束来清理）
-	// 但为了统计完整，我们不主动关闭，让程序自然结束。
-	// 实际我们通过等待时间确保了所有消息都已到达。
-
-	// 收集所有结果
+	// 5. 收集所有结果
 	close(results) // 关闭通道，停止接收
 
 	var latencies []float64
@@ -127,7 +124,7 @@ func main() {
 		latencies = append(latencies, lat)
 	}
 
-	// 6. 统计结果
+	// 6. 统计并输出压测结果
 	successCount := len(latencies)
 
 	fmt.Println("\n=== 压测结果 ===")
@@ -158,5 +155,6 @@ func main() {
 		fmt.Printf("平均延迟: %.2f ms\n", avg)
 	}
 
+	// 永久阻塞，保持连接活跃用于长稳测试或 pprof 采集
 	select {}
 }

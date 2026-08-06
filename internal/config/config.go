@@ -1,4 +1,5 @@
-// Package config 提供网关服务的配置管理。
+// Package config provides configuration management for the gateway service.
+// It supports loading from TOML files and overriding via environment variables.
 package config
 
 import (
@@ -10,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config 总配置结构。
+// Config 总配置结构, 包含所有子配置项。
 type Config struct {
 	Server           Server           `toml:"server"`
 	Websocket        Websocket        `toml:"websocket"`
@@ -66,7 +67,7 @@ type Log struct {
 	FilePath string `toml:"file_path"` // 日志文件路径，为空则只输出到控制台
 }
 
-// LoadConfig 从指定路径加载 TOML 配置文件，并校验配置合法性。
+// LoadConfig 从指定路径加载 TOML 配置文件, 并校验配置合法性。
 func LoadConfig(path string) (*Config, error) {
 	var config Config
 
@@ -81,6 +82,10 @@ func LoadConfig(path string) (*Config, error) {
 	return &config, nil
 }
 
+// ApplyEnvOverrides 使用环境变量覆盖配置中的对应字段。
+// 支持的环境变量：WS_PORT, WS_PING_INTERVAL, WS_PONG_WAIT,
+// WS_RATELIMIT_INTERVAL, WS_BURST, WS_SHUTDOWN_TIMEOUT。
+// 仅当环境变量非空且可解析为有效整数时才会覆盖。
 func (c *Config) ApplyEnvOverrides() {
 	if v := os.Getenv("WS_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
@@ -179,35 +184,42 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// 辅助方法：将配置转换为 time.Duration（方便调用方使用）
+// PingInterval 返回 Ping 帧发送间隔的 time.Duration。
 func (c *Config) PingInterval() time.Duration {
 	return time.Duration(c.Heartbeat.PingIntervalSeconds) * time.Second
 }
 
+// PongWait 返回等待 Pong 响应的超时 time.Duration。
 func (c *Config) PongWait() time.Duration {
 	return time.Duration(c.Heartbeat.PongWaitSeconds) * time.Second
 }
 
+// PingWriteTimeout 返回发送 Ping 帧的写入超时 time.Duration。
 func (c *Config) PingWriteTimeout() time.Duration {
 	return time.Duration(c.Heartbeat.PingWriteTimeoutSeconds) * time.Second
 }
 
+// ReadDeadline 返回读超时的 time.Duration。
 func (c *Config) ReadDeadline() time.Duration {
 	return time.Duration(c.Websocket.ReadDeadlineSeconds) * time.Second
 }
 
+// WriteDeadline 返回写超时的 time.Duration。
 func (c *Config) WriteDeadline() time.Duration {
 	return time.Duration(c.Websocket.WriteDeadlineSeconds) * time.Second
 }
 
+// ControlWriteTimeout 返回控制帧（关闭/Ping）写入超时的 time.Duration。
 func (c *Config) ControlWriteTimeout() time.Duration {
 	return time.Duration(c.Websocket.ControlWriteTimeoutSeconds) * time.Second
 }
 
+// ShutdownTimeout 返回优雅退出宽限期的 time.Duration。
 func (c *Config) ShutdownTimeout() time.Duration {
 	return time.Duration(c.GracefulShutdown.TimeoutSeconds) * time.Second
 }
 
+// RateLimitInterval 返回限流器令牌生成间隔的 time.Duration。
 func (c *Config) RateLimitInterval() time.Duration {
 	return time.Duration(c.Ratelimit.EverySeconds) * time.Second
 }

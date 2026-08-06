@@ -1,3 +1,5 @@
+// Package metrics provides Prometheus metrics collection for the gateway service.
+// It defines and registers metrics for connection counts, message throughput, and errors.
 package metrics
 
 import (
@@ -5,20 +7,21 @@ import (
 )
 
 var (
-	// 消息发送总量，区分single/room/broadcast
+	// MsgSendTotal 消息发送总量, 按消息类型（single/room/broadcast）区分标签。
 	MsgSendTotal *prometheus.CounterVec
-	// 消息发送失败计数器
+	// MsgSendFail 消息发送失败计数器, 按失败原因（offline/block）区分标签。
 	MsgSendFail *prometheus.CounterVec
-	// 消息接收总量
+	// MsgRecvTotal 消息接收总量（客户端发送到网关的消息）。
 	MsgRecvTotal prometheus.Counter
-	// 当前在线连接数
+	// OnlineConnGauge 当前在线 WebSocket 长连接数（瞬时值）。
 	OnlineConnGauge prometheus.Gauge
-	// 连接建立/关闭事件计数
+	// ConnEventTotal 连接建立/关闭事件总计数。
 	ConnEventTotal prometheus.Counter
 )
 
-// Init 初始化所有指标，并注册到指定的注册器。
-// 如果 reg 为 nil，则使用默认注册器（prometheus.DefaultRegisterer）。
+// Init 初始化所有 Prometheus 指标, 并注册到指定的注册器。
+// 如果 reg 为 nil, 则使用 prometheus.DefaultRegisterer 默认注册器。
+// 该函数应在程序启动时调用一次, 重复调用会导致注册冲突。
 func Init(reg prometheus.Registerer) {
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
