@@ -1,0 +1,50 @@
+services:
+  gateway:
+    build: .
+    image: se-go-ws-gateway:v1.2
+    container_name: ws-gateway
+    ports:
+      - "8080:8080"   # HTTP API / WebSocket
+      - "6060:6060"   # pprof 调试（可选，生产环境可关闭）
+    environment:
+      # 环境变量覆盖配置（优先级高于 config.toml）
+      - WS_PORT=8080
+      - WS_PING_INTERVAL=30
+      - WS_PONG_WAIT=60
+      - WS_SHUTDOWN_TIMEOUT=5
+      - GIN_MODE=release
+    volumes:
+      # 日志持久化
+      - ./logs:/app/logs
+      # 配置文件挂载（便于动态修改）
+      - ./configs/config.toml:/app/configs/config.toml:ro
+    restart: unless-stopped
+    networks:
+      - gateway-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 可选：Prometheus 监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ws-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - gateway-net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+networks:
+  gateway-net:
+    driver: bridge
+
+volumes:
+  prometheus-data:
