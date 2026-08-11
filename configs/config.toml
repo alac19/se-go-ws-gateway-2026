@@ -1,0 +1,30 @@
+[server]
+port = 8080
+
+[websocket]
+read_buffer_size = 1024
+write_buffer_size = 1024
+read_deadline_seconds = 60
+write_deadline_seconds = 10
+control_write_timeout_seconds = 1
+
+[heartbeat]
+ping_interval_seconds = 30
+pong_wait_seconds = 60
+ping_write_timeout_seconds = 10
+
+[channel]
+send_buffer_size = 256
+register_buffer_size = 256
+unregister_buffer_size = 256
+
+[ratelimit]
+every_seconds = 12
+burst = 5
+
+[graceful_shutdown]
+timeout_seconds = 5
+
+[log]
+level = "error"    
+file_path = "logs/gateway.log" 
