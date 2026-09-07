@@ -1,12 +1,12 @@
 // Package ratelimit provides HTTP flow limiting middleware based on the Gin framework.
-package ratelimit
+package middleware
 
 import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
+	"github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
 )
 
 // HandleRateLimit 返回一个 Gin 中间件处理函数, 用于对请求进行限流。

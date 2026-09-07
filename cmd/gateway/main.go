@@ -18,13 +18,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/time/rate"
 
-	config "github.com/alac/se-go-ws-gateway-2026/internal/config"
-	handler "github.com/alac/se-go-ws-gateway-2026/internal/handler"
-	ratelimit "github.com/alac/se-go-ws-gateway-2026/internal/middleware"
-	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
-	limiter "github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
-	logger "github.com/alac/se-go-ws-gateway-2026/pkg/logger"
-	metrics "github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
+	"github.com/alac/se-go-ws-gateway-2026/internal/config"
+	"github.com/alac/se-go-ws-gateway-2026/internal/handler"
+	"github.com/alac/se-go-ws-gateway-2026/internal/middleware"
+	"github.com/alac/se-go-ws-gateway-2026/internal/service"
+	"github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
+	"github.com/alac/se-go-ws-gateway-2026/pkg/logger"
+	"github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
 )
 
 func main() {
@@ -64,16 +64,17 @@ func main() {
 	clientMgr := service.NewClientManager(roomMgr, cfg.Channel.RegisterBufferSize, cfg.Channel.UnregisterBufferSize)
 	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
 	lm := limiter.NewLimiterMap(rate.Every(cfg.RateLimitInterval()), cfg.Ratelimit.Burst)
-	md1 := ratelimit.HandleRateLimit(lm)
+	md1 := middleware.HandleRateLimit(lm)
+	md2 := middleware.HandleJWTAuth()
 
-	api := r.Group("/api", md1)
+	api := r.Group("/api", md1, md2)
 
 	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
 	go clientMgr.Init(ctx, cfg.ControlWriteTimeout())
 
 	// 2. WebSocket 路由，传入 clientMgr
 	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg, cfg)
-	r.GET("/ws", hd)
+	r.GET("/ws", md2, hd)
 
 	// 3. 推送类接口，传入 messageRouter
 	hd1 := handler.HandleBroadcast(router)
