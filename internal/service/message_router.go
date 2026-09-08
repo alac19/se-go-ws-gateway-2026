@@ -1,3 +1,5 @@
+// Package service provides the core business logic for the WebSocket gateway.
+// It includes connection management, room management, and message routing.
 package service
 
 import (

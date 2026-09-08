@@ -1,3 +1,4 @@
+// Package model defines the data model and shared constants in the project.
 package model
 
 // Message 统一消息载体
