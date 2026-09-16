@@ -22,6 +22,7 @@ import (
 	"github.com/alac/se-go-ws-gateway-2026/internal/handler"
 	"github.com/alac/se-go-ws-gateway-2026/internal/middleware"
 	"github.com/alac/se-go-ws-gateway-2026/internal/service"
+	"github.com/alac/se-go-ws-gateway-2026/pkg/auth"
 	"github.com/alac/se-go-ws-gateway-2026/pkg/limiter"
 	"github.com/alac/se-go-ws-gateway-2026/pkg/logger"
 	"github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
@@ -65,18 +66,25 @@ func main() {
 	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
 	lm := limiter.NewLimiterMap(rate.Every(cfg.RateLimitInterval()), cfg.Ratelimit.Burst)
 	md1 := middleware.HandleRateLimit(lm)
-	md2 := middleware.HandleJWTAuth()
+	a := auth.NewAuthenticator("", 24*time.Hour)
+	user := auth.NewUser("", "")
+	md2 := middleware.HandleJWTAuth(a)
+
+	// 2. 登录接口
+	public := r.Group("/api", md1)
+	hd5 := handler.HandleLoginAuth(user, a)
+	public.POST("/auth/login", hd5)
 
 	api := r.Group("/api", md1, md2)
 
-	// 2. 启动 ClientManager 后台循环（处理 register/unregister 事件）
+	// 3. 启动 ClientManager 后台循环（处理 register/unregister 事件）
 	go clientMgr.Init(ctx, cfg.ControlWriteTimeout())
 
-	// 2. WebSocket 路由，传入 clientMgr
+	// 4. WebSocket 路由，传入 clientMgr
 	hd := handler.HandlerConnManagement(clientMgr, ctx, &wg, cfg)
 	r.GET("/ws", md2, hd)
 
-	// 3. 推送类接口，传入 messageRouter
+	// 5. 推送类接口，传入 messageRouter
 	hd1 := handler.HandleBroadcast(router)
 	api.POST("/broadcast", hd1)
 
@@ -86,14 +94,14 @@ func main() {
 	hd3 := handler.HandleClientSend(router)
 	api.POST("/client/:clientId/send", hd3)
 
-	// 4. 统计接口，传入 clientMgr
+	// 6. 统计接口，传入 clientMgr
 	hd4 := handler.HandleStats(clientMgr, roomMgr, serverInitTime)
 	api.GET("/stats", hd4)
 
-	// 5. /metrics 端点
+	// 7. /metrics 端点
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// 6. 健康检查端点
+	// 8. 健康检查端点
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
