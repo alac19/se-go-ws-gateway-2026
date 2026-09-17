@@ -39,14 +39,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg.ApplyEnvOverrides()
-
 	if err := logger.Init(cfg.Log.Level, cfg.Log.FilePath); err != nil {
 		slog.Error("初始化日志失败", "error", err)
 		os.Exit(1)
 	}
 
-	slog.Info("日志系统初始化成功", "level", cfg.Log.Level, "file", cfg.Log.FilePath)
+	slog.Info("日志系统初始化成功", "log_level", cfg.Log.Level, "file", cfg.Log.FilePath)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -66,8 +64,8 @@ func main() {
 	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
 	lm := limiter.NewLimiterMap(rate.Every(cfg.RateLimitInterval()), cfg.Ratelimit.Burst)
 	md1 := middleware.HandleRateLimit(lm)
-	a := auth.NewAuthenticator("", 24*time.Hour)
-	user := auth.NewUser("", "")
+	a := auth.NewAuthenticator(cfg.Jwt.Secret, cfg.TokenTTL())
+	user := auth.NewUser(cfg.Auth.UserName, cfg.Auth.PasswordHash)
 	md2 := middleware.HandleJWTAuth(a)
 
 	// 2. 登录接口
