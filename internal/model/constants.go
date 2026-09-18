@@ -10,6 +10,10 @@ const (
 	CloseCodeInvalidFormat = 4001
 	// CloseCodeDuplicateID 重复连接：clientId 已被占用
 	CloseCodeDuplicateID = 4002
+	// CloseCodeUnauthorized 鉴权缺失：请求未经过鉴权中间件, 上下文中没有身份信息
+	CloseCodeUnauthorized = 4003
+	// CloseCodeIdentityMismatch 身份不匹配：clientId 与 token 中的账号不一致
+	CloseCodeIdentityMismatch = 4004
 )
 
 // 业务响应码（独立于 HTTP 状态码）
@@ -19,8 +23,12 @@ const (
 	BizCodeSuccess = 0
 	// BizCodeBadRequest 请求参数错误（如 JSON 格式无效、字段缺失等）
 	BizCodeBadRequest = 400
+	// BizCodeUnauthorized 未通过鉴权（如 token 缺失、签名错误、已过期）
+	BizCodeUnauthorized = 401
 	// BizCodeNotFound 资源不存在（如目标房间不存在、目标客户端离线等）
 	BizCodeNotFound = 404
+	// BizCodeTooManyRequests 请求过于频繁, 已触发限流
+	BizCodeTooManyRequests = 429
 	// BizCodeInternalError 服务器内部错误（如 WebSocket 协议升级失败）
 	BizCodeInternalError = 500
 )

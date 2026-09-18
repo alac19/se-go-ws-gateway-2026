@@ -75,7 +75,8 @@ func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Dura
 						time.Now().Add(controlWriteTimeout))
 
 					if err != nil {
-						slog.Error("发送关闭帧失败", "error", err)
+						// 关闭帧发送失败只影响客户端能否收到拒绝原因, 连接随后仍会被关闭
+						slog.Warn("发送关闭帧失败", "clientId", client.ClientID, "error", err)
 					}
 
 					_ = client.Conn.Close()
@@ -173,7 +174,8 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 				time.Now().Add(controlWriteTimeout))
 
 			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
+				// 优雅退出阶段, 个别连接发送关闭帧失败不影响整体关闭流程
+				slog.Warn("发送关闭帧失败", "clientId", client.ClientID, "error", err)
 			}
 		}
 
