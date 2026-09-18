@@ -16,6 +16,8 @@ func defaultConfig() Config {
 		Ratelimit:        Ratelimit{EverySeconds: 12, Burst: 5},
 		GracefulShutdown: GracefulShutdown{TimeoutSeconds: 5},
 		Log:              Log{Level: "info", FilePath: "logs/gateway.log"},
+		Jwt:              JWT{Secret: "test-secret-change-me", TTLHours: 24},
+		Auth:             Auth{UserName: "zhangsan", PasswordHash: "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U."},
 	}
 }
 
@@ -23,7 +25,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 	t.Run("环境变量不存在", func(t *testing.T) {
 		config := defaultConfig()
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 8080 {
 			t.Errorf("Port 不为默认值, 实际得到 %d", config.Server.Port)
@@ -43,6 +47,24 @@ func TestApplyEnvOverrides(t *testing.T) {
 		if config.GracefulShutdown.TimeoutSeconds != 5 {
 			t.Errorf("TimeoutSeconds 不为默认值, 实际得到 %d", config.GracefulShutdown.TimeoutSeconds)
 		}
+		if config.Log.Level != "info" {
+			t.Errorf("Level 不为默认值, 实际得到 %v", config.Log.Level)
+		}
+		if config.Log.FilePath != "logs/gateway.log" {
+			t.Errorf("FilePath 不为默认值, 实际得到 %v", config.Log.FilePath)
+		}
+		if config.Jwt.Secret != "test-secret-change-me" {
+			t.Errorf("Secret 不为默认值, 实际得到 %v", config.Jwt.Secret)
+		}
+		if config.Jwt.TTLHours != 24 {
+			t.Errorf("TTLHours 不为默认值, 实际得到 %d", config.Jwt.TTLHours)
+		}
+		if config.Auth.UserName != "zhangsan" {
+			t.Errorf("UserName 不为默认值，实际得到 %v", config.Auth.UserName)
+		}
+		if config.Auth.PasswordHash != "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U." {
+			t.Errorf("PasswordHash 不为默认值，实际得到 %v", config.Auth.PasswordHash)
+		}
 	})
 
 	t.Run("端口覆盖", func(t *testing.T) {
@@ -51,7 +73,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PORT", "9090")
 		defer os.Unsetenv("WS_PORT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 9090 {
 			t.Errorf("Port 环境变量设置失败, 实际得到 %d", config.Server.Port)
@@ -64,7 +88,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PING_INTERVAL", "15")
 		defer os.Unsetenv("WS_PING_INTERVAL")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Heartbeat.PingIntervalSeconds != 15 {
 			t.Errorf("PingIntervalSeconds 环境变量设置失败, 实际得到 %d", config.Heartbeat.PingIntervalSeconds)
@@ -77,7 +103,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PONG_WAIT", "45")
 		defer os.Unsetenv("WS_PONG_WAIT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Heartbeat.PongWaitSeconds != 45 {
 			t.Errorf("PongWaitSeconds 环境变量设置失败, 实际得到 %d", config.Heartbeat.PongWaitSeconds)
@@ -92,7 +120,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_BURST")
 		defer os.Unsetenv("WS_RATELIMIT_INTERVAL")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Ratelimit.EverySeconds != 5 {
 			t.Errorf("EverySeconds 环境变量设置失败, 实际得到 %d", config.Ratelimit.EverySeconds)
@@ -108,10 +138,72 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_SHUTDOWN_TIMEOUT", "3")
 		defer os.Unsetenv("WS_SHUTDOWN_TIMEOUT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.GracefulShutdown.TimeoutSeconds != 3 {
 			t.Errorf("TimeoutSeconds 环境变量设置失败, 实际得到 %d", config.GracefulShutdown.TimeoutSeconds)
+		}
+	})
+
+	t.Run("日志参数覆盖", func(t *testing.T) {
+		config := defaultConfig()
+
+		os.Setenv("WS_LOG_LEVEL", "error")
+		os.Setenv("WS_LOG_FILE", "logs/gateway2.log")
+		defer os.Unsetenv("WS_LOG_FILE")
+		defer os.Unsetenv("WS_LOG_LEVEL")
+
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
+
+		if config.Log.Level != "error" {
+			t.Errorf("Level 环境变量设置失败, 实际得到 %v", config.Log.Level)
+		}
+		if config.Log.FilePath != "logs/gateway2.log" {
+			t.Errorf("FilePath 环境变量设置失败, 实际得到 %v", config.Log.FilePath)
+		}
+	})
+
+	t.Run("鉴权参数覆盖", func(t *testing.T) {
+		config := defaultConfig()
+
+		os.Setenv("WS_JWT_SECRET", "test2-secret-change-me")
+		os.Setenv("WS_JWT_TTL_HOURS", "10")
+		defer os.Unsetenv("WS_JWT_TTL_HOURS")
+		defer os.Unsetenv("WS_JWT_SECRET")
+
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
+
+		if config.Jwt.Secret != "test2-secret-change-me" {
+			t.Errorf("Secret 环境变量设置失败, 实际得到 %v", config.Jwt.Secret)
+		}
+		if config.Jwt.TTLHours != 10 {
+			t.Errorf("TTLHours 环境变量设置失败, 实际得到 %d", config.Jwt.TTLHours)
+		}
+	})
+
+	t.Run("身份凭证参数覆盖", func(t *testing.T) {
+		config := defaultConfig()
+
+		os.Setenv("WS_AUTH_USERNAME", "lisi")
+		os.Setenv("WS_AUTH_PASSWORD_HASH", "$2a$10$tRUpNnJ5F9Z6SV0iqLjin.Wf2h9pl/rx6T4gNjqNDw3GApUgmriG.")
+		defer os.Unsetenv("WS_AUTH_PASSWORD_HASH")
+		defer os.Unsetenv("WS_AUTH_USERNAME")
+
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
+
+		if config.Auth.UserName != "lisi" {
+			t.Errorf("UserName 环境变量设置失败, 实际得到 %v", config.Auth.UserName)
+		}
+		if config.Auth.PasswordHash != "$2a$10$tRUpNnJ5F9Z6SV0iqLjin.Wf2h9pl/rx6T4gNjqNDw3GApUgmriG." {
+			t.Errorf("PasswordHash 环境变量设置失败, 实际得到 %v", config.Auth.PasswordHash)
 		}
 	})
 
@@ -121,7 +213,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PORT", "")
 		defer os.Unsetenv("WS_PORT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 8080 {
 			t.Errorf("Port 不为默认值, 实际得到 %d", config.Server.Port)
@@ -136,7 +230,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_PING_INTERVAL")
 		defer os.Unsetenv("WS_PORT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 9090 {
 			t.Errorf("Port 环境变量设置失败, 实际得到 %d", config.Server.Port)
@@ -147,15 +243,37 @@ func TestApplyEnvOverrides(t *testing.T) {
 	})
 
 	t.Run("环境变量为非法值", func(t *testing.T) {
-		config := defaultConfig()
+		tests := []struct {
+			name    string
+			key     string
+			value   string
+			wantErr string
+		}{
+			{"端口非数字", "WS_PORT", "abc", `环境变量 WS_PORT 的值 "abc" 无法解析为整数`},
+			{"心跳间隔为小数", "WS_PING_INTERVAL", "12.5", `环境变量 WS_PING_INTERVAL 的值 "12.5" 无法解析为整数`},
+			{"Pong 超时非数字", "WS_PONG_WAIT", "abc", `环境变量 WS_PONG_WAIT 的值 "abc" 无法解析为整数`},
+			{"限流速率非数字", "WS_RATELIMIT_INTERVAL", "abc", `环境变量 WS_RATELIMIT_INTERVAL 的值 "abc" 无法解析为整数`},
+			{"限流桶大小非数字", "WS_BURST", "abc", `环境变量 WS_BURST 的值 "abc" 无法解析为整数`},
+			{"优雅退出宽限期含前导空格", "WS_SHUTDOWN_TIMEOUT", " 3", `环境变量 WS_SHUTDOWN_TIMEOUT 的值 " 3" 无法解析为整数`},
+			{"鉴权过期时间非数字", "WS_JWT_TTL_HOURS", "abc", `环境变量 WS_JWT_TTL_HOURS 的值 "abc" 无法解析为整数`},
+		}
 
-		os.Setenv("WS_PORT", "abc")
-		defer os.Unsetenv("WS_PORT")
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				config := defaultConfig()
 
-		config.ApplyEnvOverrides()
+				os.Setenv(test.key, test.value)
+				defer os.Unsetenv(test.key)
 
-		if config.Server.Port != 8080 {
-			t.Errorf("Port 不为默认值, 实际得到 %d", config.Server.Port)
+				err := config.ApplyEnvOverrides()
+
+				if err == nil {
+					t.Fatalf("ApplyEnvOverrides() 期望错误 %q, 得到 nil", test.wantErr)
+				}
+				if err.Error() != test.wantErr {
+					t.Errorf("错误消息不匹配: got %q, want %q", err.Error(), test.wantErr)
+				}
+			})
 		}
 	})
 }
@@ -178,27 +296,39 @@ func TestValidate(t *testing.T) {
 		everySeconds               int
 		burst                      int
 		timeoutSeconds             int
+		level                      string
+		secret                     string
+		ttlHours                   int
+		userName                   string
+		passwordHash               string
 		wantErr                    error
 	}{
-		{"配置合法", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, nil},
-		{"端口为 0", 0, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("server.port 必须在 1-65535 之间, 当前值: 0")},
-		{"端口为 65536", 65536, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("server.port 必须在 1-65535 之间, 当前值: 65536")},
-		{"读缓冲区间为 0", 8080, 0, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("websocket.read_buffer_size 必须 > 0, 当前值: 0")},
-		{"写缓冲区间为 0", 8080, 1024, 0, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("websocket.write_buffer_size 必须 > 0, 当前值: 0")},
-		{"读超时为 0", 8080, 1024, 1024, 0, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("websocket.read_deadline_seconds 必须 > 0, 当前值: 0")},
-		{"写超时为 0", 8080, 1024, 1024, 60, 0, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("websocket.write_deadline_seconds 必须 > 0, 当前值: 0")},
-		{"控制帧发送超时为 0", 8080, 1024, 1024, 60, 10, 0, 30, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("websocket.control_write_timeout_seconds 必须 > 0, 当前值: 0")},
-		{"心跳间隔为 0", 8080, 1024, 1024, 60, 10, 1, 0, 60, 10, 255, 255, 255, 12, 5, 5, errors.New("heartbeat.ping_interval_seconds 必须 > 0, 当前值: 0")},
-		{"pong 超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 0, 10, 255, 255, 255, 12, 5, 5, errors.New("heartbeat.pong_wait_seconds 必须 > 0, 当前值: 0")},
-		{"pong 超时小于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 20, 10, 255, 255, 255, 12, 5, 5, errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 20")},
-		{"pong 超时等于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 30, 10, 255, 255, 255, 12, 5, 5, errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 30")},
-		{"ping 帧发送超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 0, 255, 255, 255, 12, 5, 5, errors.New("heartbeat.ping_write_timeout_seconds 必须 > 0, 当前值: 0")},
-		{"send 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 0, 255, 255, 12, 5, 5, errors.New("channel.send_buffer_size 必须 > 0, 当前值: 0")},
-		{"register 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 0, 255, 12, 5, 5, errors.New("channel.register_buffer_size 必须 > 0, 当前值: 0")},
-		{"unregister 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 0, 12, 5, 5, errors.New("channel.unregister_buffer_size 必须 > 0, 当前值: 0")},
-		{"限流速率为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 0, 5, 5, errors.New("ratelimit.every_seconds 必须 > 0, 当前值: 0")},
-		{"限流桶大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 0, 5, errors.New("ratelimit.burst 必须 > 0, 当前值: 0")},
-		{"优雅退出宽限期为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 0, errors.New("graceful_shutdown.timeout_seconds 必须 > 0, 当前值: 0")},
+		{"配置合法", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", nil},
+		{"端口为 0", 0, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("server.port 必须在 1-65535 之间, 当前值: 0")},
+		{"端口为 65536", 65536, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("server.port 必须在 1-65535 之间, 当前值: 65536")},
+		{"读缓冲区间为 0", 8080, 0, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.read_buffer_size 必须 > 0, 当前值: 0")},
+		{"写缓冲区间为 0", 8080, 1024, 0, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.write_buffer_size 必须 > 0, 当前值: 0")},
+		{"读超时为 0", 8080, 1024, 1024, 0, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.read_deadline_seconds 必须 > 0, 当前值: 0")},
+		{"写超时为 0", 8080, 1024, 1024, 60, 0, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.write_deadline_seconds 必须 > 0, 当前值: 0")},
+		{"控制帧发送超时为 0", 8080, 1024, 1024, 60, 10, 0, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.control_write_timeout_seconds 必须 > 0, 当前值: 0")},
+		{"心跳间隔为 0", 8080, 1024, 1024, 60, 10, 1, 0, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.ping_interval_seconds 必须 > 0, 当前值: 0")},
+		{"pong 超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 0, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.pong_wait_seconds 必须 > 0, 当前值: 0")},
+		{"pong 超时小于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 20, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 20")},
+		{"pong 超时等于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 30, 10, 255, 255, 255, 12, 5, 5, "info", "detestv-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 30")},
+		{"ping 帧发送超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 0, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.ping_write_timeout_seconds 必须 > 0, 当前值: 0")},
+		{"send 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 0, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("channel.send_buffer_size 必须 > 0, 当前值: 0")},
+		{"register 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 0, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("channel.register_buffer_size 必须 > 0, 当前值: 0")},
+		{"unregister 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 0, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("channel.unregister_buffer_size 必须 > 0, 当前值: 0")},
+		{"限流速率为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 0, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("ratelimit.every_seconds 必须 > 0, 当前值: 0")},
+		{"限流桶大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 0, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("ratelimit.burst 必须 > 0, 当前值: 0")},
+		{"优雅退出宽限期为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 0, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("graceful_shutdown.timeout_seconds 必须 > 0, 当前值: 0")},
+		{"日志级别为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("log.level 必须为 debug/info/warn/error 其中一个, 当前值: ")},
+		{"密钥为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("jwt.secret 不能为空, 当前值: ")},
+		{"密钥长度小于 16", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test3-secret", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("jwt.secret 长度不能少于 16 个字符(建议 32 以上), 当前长度: 12")},
+		{"鉴权过期时间为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 0, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("jwt.ttl_hours 必须 > 0, 当前值: 0")},
+		{"预置账号名为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("auth.username 不能为空, 当前值: ")},
+		{"预置哈希值为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "", errors.New("auth.password_hash 不能为空, 当前值: ")},
+		{"预置哈希值格式错误", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "default", errors.New("auth.password_hash 必须为合法的 bcrypt 哈希(以 $2a$/$2b$/$2y$ 开头, 长度 60), 当前值: default")},
 	}
 
 	for _, test := range tests {
@@ -220,6 +350,11 @@ func TestValidate(t *testing.T) {
 			config.Ratelimit.EverySeconds = test.everySeconds
 			config.Ratelimit.Burst = test.burst
 			config.GracefulShutdown.TimeoutSeconds = test.timeoutSeconds
+			config.Log.Level = test.level
+			config.Jwt.Secret = test.secret
+			config.Jwt.TTLHours = test.ttlHours
+			config.Auth.UserName = test.userName
+			config.Auth.PasswordHash = test.passwordHash
 
 			got := config.Validate()
 
@@ -254,12 +389,43 @@ func TestConfigHelpers(t *testing.T) {
 		{"ControlWriteTimeout", cfg.ControlWriteTimeout(), 1 * time.Second},
 		{"ShutdownTimeout", cfg.ShutdownTimeout(), 5 * time.Second},
 		{"RateLimitInterval", cfg.RateLimitInterval(), 12 * time.Second},
+		{"TokenTTL", cfg.TokenTTL(), 24 * time.Hour},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if test.got != test.want {
 				t.Errorf("%s() = %v, want %v", test.name, test.got, test.want)
+			}
+		})
+	}
+}
+
+func TestIsBcryptHash(t *testing.T) {
+	tests := []struct {
+		name string
+		hash string
+		want bool
+	}{
+		{"合法的 $2a$ 哈希", "$2a$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", true},
+		{"合法的 $2b$ 哈希", "$2b$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", true},
+		{"合法的 $2y$ 哈希", "$2y$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", true},
+		{"空字符串", "", false},
+		{"非 bcrypt 占位符", "default", false},
+		{"长度不足 60 位", "$2a$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCk", false},
+		{"长度超过 60 位", "$2a$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCkaa", false},
+		{"版本前缀不支持", "$2x$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", false},
+		{"缺少 $ 前缀", "x2a$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", false},
+		{"成本因子非数字", "$2a$ab$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", false},
+		{"盐摘要含标准 base64 加号", "$2a$10$MqkF+/ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", false},
+		{"盐摘要含标准 base64 等号", "$2a$10$MqkF/=ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", false},
+		{"盐摘要含空格", "$2a$10$MqkF/ ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isBcryptHash(test.hash); got != test.want {
+				t.Errorf("isBcryptHash(%q) 期望 %v, 实际得到 %v", test.hash, test.want, got)
 			}
 		})
 	}

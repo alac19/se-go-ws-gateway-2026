@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -20,6 +21,8 @@ type Config struct {
 	Ratelimit        Ratelimit        `toml:"ratelimit"`
 	GracefulShutdown GracefulShutdown `toml:"graceful_shutdown"`
 	Log              Log              `toml:"log"`
+	Jwt              JWT              `toml:"jwt"`
+	Auth             Auth             `toml:"auth"`
 }
 
 // Server 定义 HTTP 服务器配置。
@@ -67,12 +70,28 @@ type Log struct {
 	FilePath string `toml:"file_path"` // 日志文件路径，为空则只输出到控制台
 }
 
+// JWT 定义鉴权配置。
+type JWT struct {
+	Secret   string `toml:"secret"`    // 密钥
+	TTLHours int    `toml:"ttl_hours"` // 过期时间
+}
+
+// Auth 定义身份凭证配置。
+type Auth struct {
+	UserName     string `toml:"username"`      // 账号名
+	PasswordHash string `toml:"password_hash"` // 哈希码
+}
+
 // LoadConfig 从指定路径加载 TOML 配置文件, 并校验配置合法性。
 func LoadConfig(path string) (*Config, error) {
 	var config Config
 
 	if _, err := toml.DecodeFile(path, &config); err != nil {
 		return nil, fmt.Errorf("decode config failed: %w", err)
+	}
+
+	if err := config.ApplyEnvOverrides(); err != nil {
+		return nil, fmt.Errorf("apply env overrides failed: %w", err)
 	}
 
 	if err := config.Validate(); err != nil {
@@ -84,39 +103,70 @@ func LoadConfig(path string) (*Config, error) {
 
 // ApplyEnvOverrides 使用环境变量覆盖配置中的对应字段。
 // 支持的环境变量：WS_PORT, WS_PING_INTERVAL, WS_PONG_WAIT,
-// WS_RATELIMIT_INTERVAL, WS_BURST, WS_SHUTDOWN_TIMEOUT。
-// 仅当环境变量非空且可解析为有效整数时才会覆盖。
-func (c *Config) ApplyEnvOverrides() {
-	if v := os.Getenv("WS_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.Port = port
-		}
+// WS_RATELIMIT_INTERVAL, WS_BURST, WS_SHUTDOWN_TIMEOUT,
+// WS_LOG_LEVEL, WS_LOG_FILE, WS_JWT_SECRET,
+// WS_JWT_TTL_HOURS, WS_AUTH_USERNAME, WS_AUTH_PASSWORD_HASH。
+// 仅当环境变量非空时才会覆盖; 数值型环境变量若无法解析为整数则返回错误。
+func (c *Config) ApplyEnvOverrides() error {
+	if err := applyIntOverride("WS_PORT", &c.Server.Port); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_PING_INTERVAL"); v != "" {
-		if pingInternal, err := strconv.Atoi(v); err == nil {
-			c.Heartbeat.PingIntervalSeconds = pingInternal
-		}
+	if err := applyIntOverride("WS_PING_INTERVAL", &c.Heartbeat.PingIntervalSeconds); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_PONG_WAIT"); v != "" {
-		if pongWait, err := strconv.Atoi(v); err == nil {
-			c.Heartbeat.PongWaitSeconds = pongWait
-		}
+	if err := applyIntOverride("WS_PONG_WAIT", &c.Heartbeat.PongWaitSeconds); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_RATELIMIT_INTERVAL"); v != "" {
-		if ratelimitInternal, err := strconv.Atoi(v); err == nil {
-			c.Ratelimit.EverySeconds = ratelimitInternal
-		}
+	if err := applyIntOverride("WS_RATELIMIT_INTERVAL", &c.Ratelimit.EverySeconds); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_BURST"); v != "" {
-		if burst, err := strconv.Atoi(v); err == nil {
-			c.Ratelimit.Burst = burst
-		}
+	if err := applyIntOverride("WS_BURST", &c.Ratelimit.Burst); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_SHUTDOWN_TIMEOUT"); v != "" {
-		if shutdownTimeout, err := strconv.Atoi(v); err == nil {
-			c.GracefulShutdown.TimeoutSeconds = shutdownTimeout
-		}
+	if err := applyIntOverride("WS_SHUTDOWN_TIMEOUT", &c.GracefulShutdown.TimeoutSeconds); err != nil {
+		return err
 	}
+	if err := applyIntOverride("WS_JWT_TTL_HOURS", &c.Jwt.TTLHours); err != nil {
+		return err
+	}
+
+	if v := os.Getenv("WS_LOG_LEVEL"); v != "" {
+		c.Log.Level = v
+	}
+	if v := os.Getenv("WS_LOG_FILE"); v != "" {
+		c.Log.FilePath = v
+	}
+	if v := os.Getenv("WS_JWT_SECRET"); v != "" {
+		c.Jwt.Secret = v
+	}
+	if v := os.Getenv("WS_AUTH_USERNAME"); v != "" {
+		c.Auth.UserName = v
+	}
+	if v := os.Getenv("WS_AUTH_PASSWORD_HASH"); v != "" {
+		c.Auth.PasswordHash = v
+	}
+
+	return nil
+}
+
+// applyIntOverride 在环境变量 name 非空时将其解析为整数并写入 target。
+// 环境变量未设置或为空时保持 target 不变; 解析失败时返回错误。
+func applyIntOverride(name string, target *int) error {
+	v := os.Getenv(name)
+
+	if v == "" {
+		return nil
+	}
+
+	parsed, err := strconv.Atoi(v)
+
+	if err != nil {
+		return fmt.Errorf("环境变量 %s 的值 %q 无法解析为整数", name, v)
+	}
+
+	*target = parsed
+
+	return nil
 }
 
 // Validate 校验配置项的合法性。
@@ -181,6 +231,33 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("graceful_shutdown.timeout_seconds 必须 > 0, 当前值: %d", c.GracefulShutdown.TimeoutSeconds)
 	}
 
+	// Log
+	if strings.ToLower(c.Log.Level) != "debug" && strings.ToLower(c.Log.Level) != "info" && strings.ToLower(c.Log.Level) != "warn" && strings.ToLower(c.Log.Level) != "error" {
+		return fmt.Errorf("log.level 必须为 debug/info/warn/error 其中一个, 当前值: %v", c.Log.Level)
+	}
+
+	// JWT
+	if c.Jwt.Secret == "" {
+		return fmt.Errorf("jwt.secret 不能为空, 当前值: %v", c.Jwt.Secret)
+	}
+	if len(c.Jwt.Secret) < 16 {
+		return fmt.Errorf("jwt.secret 长度不能少于 16 个字符(建议 32 以上), 当前长度: %d", len(c.Jwt.Secret))
+	}
+	if c.Jwt.TTLHours <= 0 {
+		return fmt.Errorf("jwt.ttl_hours 必须 > 0, 当前值: %d", c.Jwt.TTLHours)
+	}
+
+	// Auth
+	if c.Auth.UserName == "" {
+		return fmt.Errorf("auth.username 不能为空, 当前值: %v", c.Auth.UserName)
+	}
+	if c.Auth.PasswordHash == "" {
+		return fmt.Errorf("auth.password_hash 不能为空, 当前值: %v", c.Auth.PasswordHash)
+	}
+	if !isBcryptHash(c.Auth.PasswordHash) {
+		return fmt.Errorf("auth.password_hash 必须为合法的 bcrypt 哈希(以 $2a$/$2b$/$2y$ 开头, 长度 60), 当前值: %s", c.Auth.PasswordHash)
+	}
+
 	return nil
 }
 
@@ -222,4 +299,38 @@ func (c *Config) ShutdownTimeout() time.Duration {
 // RateLimitInterval 返回限流器令牌生成间隔的 time.Duration。
 func (c *Config) RateLimitInterval() time.Duration {
 	return time.Duration(c.Ratelimit.EverySeconds) * time.Second
+}
+
+// TokenTTL 返回 token 验证器过期时间的 time.Duration。
+func (c *Config) TokenTTL() time.Duration {
+	return time.Duration(c.Jwt.TTLHours) * time.Hour
+}
+
+// isBcryptHash 校验字符串是否为合法的 bcrypt 哈希格式:
+// "$2a$" 或 "$2b$" 或 "$2y$" + 两位成本因子 + 22 位盐 + 31 位摘要, 共 60 个字符。
+func isBcryptHash(hash string) bool {
+	if len(hash) != 60 {
+		return false
+	}
+
+	if !strings.HasPrefix(hash, "$2a$") && !strings.HasPrefix(hash, "$2b$") && !strings.HasPrefix(hash, "$2y$") {
+		return false
+	}
+
+	// 第 5、6 位是成本因子, 必须是两位数字
+	if _, err := strconv.Atoi(hash[4:6]); err != nil {
+		return false
+	}
+
+	// 第 8 位起是盐和摘要, 只允许 bcrypt 的 base64 字母表
+	for i := 7; i < len(hash); i++ {
+		ch := hash[i]
+		isAlnum := (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+
+		if !isAlnum && ch != '.' && ch != '/' {
+			return false
+		}
+	}
+
+	return true
 }
