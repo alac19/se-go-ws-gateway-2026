@@ -1,10 +1,8 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
-import { useRouter } from 'vue-router'
+import AppHeader from '../components/AppHeader.vue'
 import { getMetricsSummary, getStats } from '../api/stats'
-
-const router = useRouter()
 
 // /api/stats 受网关限流（12 秒 1 个令牌），轮询间隔取 20 秒留出余量；
 // /metrics 不参与限流，可以更勤快一些
@@ -102,11 +100,6 @@ function handleResize() {
   pieChart?.resize()
 }
 
-function handleLogout() {
-  localStorage.removeItem('token')
-  router.push({ name: 'login' })
-}
-
 onMounted(() => {
   barChart = echarts.init(document.getElementById('room-bar-chart'))
   pieChart = echarts.init(document.getElementById('room-pie-chart'))
@@ -128,18 +121,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page">
-    <header class="topbar">
-      <span class="title">监控看板</span>
-      <nav>
-        <router-link to="/dashboard">看板</router-link>
-        <router-link to="/broadcast">消息推送</router-link>
-      </nav>
+    <AppHeader title="监控看板">
       <span class="updated">更新于 {{ lastUpdated || '—' }}</span>
       <button class="refresh" :disabled="refreshing" @click="refreshStats(); refreshMetrics()">
         {{ refreshing ? '刷新中…' : '立即刷新' }}
       </button>
-      <button class="logout" @click="handleLogout">退出登录</button>
-    </header>
+    </AppHeader>
 
     <main class="content">
       <p v-if="statsError" class="error-banner">⚠ {{ statsError }}（数据展示的是最近一次成功结果）</p>
@@ -200,62 +187,24 @@ onBeforeUnmount(() => {
   min-height: 100vh;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  height: 56px;
-  padding: 0 24px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
-}
-
-.title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2d3d;
-}
-
-nav {
-  display: flex;
-  gap: 16px;
-  flex: 1;
-}
-
-nav a {
-  font-size: 14px;
-  color: #606266;
-  text-decoration: none;
-}
-
-nav a.router-link-active {
-  color: #409eff;
-}
-
 .updated {
   font-size: 12px;
   color: #909399;
 }
 
-.refresh,
-.logout {
+.refresh {
   height: 32px;
   padding: 0 14px;
-  border: 1px solid #dcdfe6;
+  margin-right: -8px;
+  border: 1px solid #b3d8ff;
   border-radius: 6px;
   background: #fff;
   font-size: 13px;
-  color: #606266;
+  color: #409eff;
   cursor: pointer;
 }
 
-.refresh {
-  color: #409eff;
-  border-color: #b3d8ff;
-}
-
-.refresh:hover,
-.logout:hover {
+.refresh:hover {
   border-color: #409eff;
 }
 
