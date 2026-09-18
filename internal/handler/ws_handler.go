@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	config "github.com/alac/se-go-ws-gateway-2026/internal/config"
 	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
+	auth "github.com/alac/se-go-ws-gateway-2026/pkg/auth"
 	metrics "github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
 )
 
@@ -26,6 +28,7 @@ var validIDPattern = regexp.MustCompile("^[a-zA-Z0-9_-]+$")
 
 // HandlerConnManagement WebSocket 接入处理器。
 // 负责将 HTTP 请求升级为 WebSocket 连接, 并进行参数校验、重复连接检查、客户端注册，
+// 身份绑定校验（clientId 必须与 token 中的账号一致），
 // 以及启动读写协程（writePump / readPump）进行消息处理和心跳保活。
 //
 // 参数:
@@ -45,7 +48,9 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 
 		if err != nil {
-			slog.Error("WebSocket 升级失败", "error", err)
+			// 升级失败绝大多数是客户端未按 WebSocket 协议发起连接(如普通 HTTP 请求),
+			// 属于客户端问题, 记为 Warn
+			slog.Warn("WebSocket 升级失败", "error", err)
 
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":   model.BizCodeInternalError,
@@ -58,15 +63,7 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 
 		// 若网关正在优雅退出, 拒绝新连接并返回 1001 状态码（Going Away）
 		if clientMgr.IsShuttingDown() {
-			err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseGoingAway, "service is shutting down"),
-				time.Now().Add(cfg.ControlWriteTimeout()))
-
-			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
-			}
-
-			_ = conn.Close()
+			closeWithReason(conn, cfg.ControlWriteTimeout(), websocket.CloseGoingAway, "service is shutting down")
 
 			return
 		}
@@ -78,15 +75,7 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		if clientID == "" || roomID == "" {
 			slog.Warn("参数缺失", "clientId", clientID, "roomId", roomID)
 
-			err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(model.CloseCodeMissingParam, "clientId and roomId are required"),
-				time.Now().Add(cfg.ControlWriteTimeout()))
-
-			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
-			}
-
-			_ = conn.Close()
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeMissingParam, "clientId and roomId are required")
 
 			return
 		}
@@ -94,15 +83,7 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		if !validIDPattern.MatchString(clientID) {
 			slog.Warn("clientId 包含非法字符", "clientId", clientID)
 
-			err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(model.CloseCodeInvalidFormat, "invalid clientId format"),
-				time.Now().Add(cfg.ControlWriteTimeout()))
-
-			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
-			}
-
-			_ = conn.Close()
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeInvalidFormat, "invalid clientId format")
 
 			return
 		}
@@ -110,15 +91,41 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		if !validIDPattern.MatchString(roomID) {
 			slog.Warn("roomID 包含非法字符", "roomID", roomID)
 
-			err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(model.CloseCodeInvalidFormat, "invalid roomID format"),
-				time.Now().Add(cfg.ControlWriteTimeout()))
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeInvalidFormat, "invalid roomID format")
 
-			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
-			}
+			return
+		}
 
-			_ = conn.Close()
+		// 身份绑定: 校验 token 中的账号与 clientId 是否匹配。
+		// 鉴权中间件(HandleJWTAuth)已把解析出的声明写入 gin.Context, 这里取出本次连接的身份。
+		claimsValue, exists := c.Get(auth.ContextKeyClaims)
+
+		if !exists {
+			// 正常情况下中间件已经拦截, 走到这里说明该路由没有挂载鉴权中间件
+			slog.Error("上下文缺少鉴权信息", "clientId", clientID)
+
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeUnauthorized, "missing auth context")
+
+			return
+		}
+
+		claims, ok := claimsValue.(auth.Claims)
+
+		if !ok {
+			slog.Error("上下文中的鉴权信息类型异常", "clientId", clientID)
+
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeUnauthorized, "invalid auth context")
+
+			return
+		}
+
+		// clientId 约定为 "<账号名>" 或 "<账号名>-<后缀>"。
+		// 同一账号打开多个页面时用后缀区分, 既满足重复连接检查又能绑定身份;
+		// 若既不等于账号名也不以其为前缀, 说明客户端在冒用他人的连接标识, 直接拒绝。
+		if clientID != claims.Subject && !strings.HasPrefix(clientID, claims.Subject+"-") {
+			slog.Warn("clientId 与登录身份不匹配", "clientId", clientID, "user", claims.Subject)
+
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeIdentityMismatch, "clientId does not match the authenticated user")
 
 			return
 		}
@@ -126,15 +133,7 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		if _, res := clientMgr.Get(clientID); res {
 			slog.Warn("clientId 已存在, 拒绝连接", "clientId", clientID)
 
-			err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(model.CloseCodeDuplicateID, "clientId already exists"),
-				time.Now().Add(cfg.ControlWriteTimeout()))
-
-			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
-			}
-
-			_ = conn.Close()
+			closeWithReason(conn, cfg.ControlWriteTimeout(), model.CloseCodeDuplicateID, "clientId already exists")
 
 			return
 		}
@@ -145,6 +144,11 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		// 创建客户端并注册到连接管理器
 		client := model.NewClient(clientID, roomID, conn, cfg.Channel.SendBufferSize, time.Now())
 		clientMgr.Register(client)
+
+		// 连接建立日志放在 Debug 级别: 压测时成千上万条连接日志会刷屏并拖慢终端输出,
+		// 默认 info 级别下不会输出; 需要观察时用 WS_LOG_LEVEL=debug 启动。
+		// 压测期间的连接数等统计数据应看 /metrics, 而不是翻日志。
+		slog.Debug("WebSocket 连接建立", "clientId", clientID, "roomId", roomID, "user", claims.Subject)
 
 		// 设置 Pong 处理器, 收到 Pong 时延长读超时并更新 LastPong
 		conn.SetPongHandler(func(appData string) error {
@@ -158,6 +162,26 @@ func HandlerConnManagement(clientMgr *service.ClientManager, ctx context.Context
 		go writePump(client, ctx, wg, cfg.PingInterval(), cfg.WriteDeadline(), cfg.PingWriteTimeout())
 		go readPump(client, clientMgr, wg, cfg.PongWait(), cfg.ControlWriteTimeout())
 	}
+}
+
+// closeWithReason 向客户端发送关闭帧说明拒绝原因, 随后关闭连接。
+// 关闭帧发送失败只记录日志而不中断流程: 连接马上就要关闭,
+// 这里失败不影响后续清理, 但记下来有助于判断客户端是否收到了拒绝原因。
+//
+// 参数:
+//   - conn: 待关闭的连接
+//   - timeout: 发送关闭帧的写入超时
+//   - code: 关闭码, 4000-4999 为应用自定义范围, 见 model 包中的 CloseCode 常量
+//   - reason: 关闭原因, 会随关闭帧一起发给客户端
+func closeWithReason(conn *websocket.Conn, timeout time.Duration, code int, reason string) {
+	if err := conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(code, reason),
+		time.Now().Add(timeout)); err != nil {
+		// 关闭帧发送失败只影响客户端能否收到拒绝原因, 连接随后仍会被关闭
+		slog.Warn("发送关闭帧失败", "code", code, "error", err)
+	}
+
+	_ = conn.Close()
 }
 
 // writePump 负责从客户端的 SendChan 通道读取消息并写入 WebSocket 连接。
@@ -199,7 +223,8 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 			client.Unlock()
 
 			if err != nil {
-				slog.Error("writePump 写入失败", "clientId", client.ClientID, "error", err)
+				// 写入失败通常意味着客户端已断开或网络异常, 属于连接级问题
+				slog.Warn("writePump 写入失败", "clientId", client.ClientID, "error", err)
 				return
 			}
 		case <-ticker.C:
@@ -207,7 +232,8 @@ func writePump(client *model.Client, ctx context.Context, wg *sync.WaitGroup, pi
 			err := client.Conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(pingWriteTimeout))
 
 			if err != nil {
-				slog.Error("发送 ping 帧失败", "error", err)
+				// Ping 发送失败说明连接已不可用, 属于连接级问题
+				slog.Warn("发送 ping 帧失败", "clientId", client.ClientID, "error", err)
 				return
 			}
 		case <-ctx.Done():
@@ -241,7 +267,9 @@ func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.W
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(controlWriteTimeout))
 
 			if err != nil {
-				slog.Error("发送关闭帧失败", "error", err)
+				// 走到这里说明读取已经失败(客户端多半已断开), 再补发关闭帧失败属于预期结果,
+				// 因此记为 Debug, 避免每个正常断开的客户端都刷一条 Warn
+				slog.Debug("发送关闭帧失败", "clientId", client.ClientID, "error", err)
 			}
 
 			// 连接断开时, 通知连接池注销
@@ -255,7 +283,14 @@ func readPump(client *model.Client, clientMgr *service.ClientManager, wg *sync.W
 		_, _, err := client.Conn.ReadMessage()
 
 		if err != nil {
-			slog.Error("readPump 读取失败", "clientId", client.ClientID, "error", err)
+			// 客户端正常关闭(1000)或服务端优雅退出主动关闭(1001)属于预期行为, 记 Info;
+			// 其余(连接重置、超时、异常关闭码)才记 Warn, 避免正常断开刷出 ERROR 日志
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				slog.Info("客户端连接已关闭", "clientId", client.ClientID)
+			} else {
+				slog.Warn("readPump 读取失败", "clientId", client.ClientID, "error", err)
+			}
+
 			return
 		}
 

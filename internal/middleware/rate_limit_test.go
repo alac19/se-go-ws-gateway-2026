@@ -27,7 +27,7 @@ func TestHandleRateLimit(t *testing.T) {
 		expectedBody    string
 	}{
 		{"正常不限流", false, http.StatusOK, "ok"},
-		{"限流", true, http.StatusTooManyRequests, `{"error":"too many requests"}`},
+		{"限流", true, http.StatusTooManyRequests, `{"code":429,"error":"请求过于频繁, 请稍后重试","status":"error"}`},
 	}
 
 	for _, test := range tests {
