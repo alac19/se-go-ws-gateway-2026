@@ -25,7 +25,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 	t.Run("环境变量不存在", func(t *testing.T) {
 		config := defaultConfig()
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 8080 {
 			t.Errorf("Port 不为默认值, 实际得到 %d", config.Server.Port)
@@ -71,7 +73,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PORT", "9090")
 		defer os.Unsetenv("WS_PORT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 9090 {
 			t.Errorf("Port 环境变量设置失败, 实际得到 %d", config.Server.Port)
@@ -84,7 +88,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PING_INTERVAL", "15")
 		defer os.Unsetenv("WS_PING_INTERVAL")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Heartbeat.PingIntervalSeconds != 15 {
 			t.Errorf("PingIntervalSeconds 环境变量设置失败, 实际得到 %d", config.Heartbeat.PingIntervalSeconds)
@@ -97,7 +103,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PONG_WAIT", "45")
 		defer os.Unsetenv("WS_PONG_WAIT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Heartbeat.PongWaitSeconds != 45 {
 			t.Errorf("PongWaitSeconds 环境变量设置失败, 实际得到 %d", config.Heartbeat.PongWaitSeconds)
@@ -112,7 +120,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_BURST")
 		defer os.Unsetenv("WS_RATELIMIT_INTERVAL")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Ratelimit.EverySeconds != 5 {
 			t.Errorf("EverySeconds 环境变量设置失败, 实际得到 %d", config.Ratelimit.EverySeconds)
@@ -128,7 +138,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_SHUTDOWN_TIMEOUT", "3")
 		defer os.Unsetenv("WS_SHUTDOWN_TIMEOUT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.GracefulShutdown.TimeoutSeconds != 3 {
 			t.Errorf("TimeoutSeconds 环境变量设置失败, 实际得到 %d", config.GracefulShutdown.TimeoutSeconds)
@@ -143,7 +155,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_LOG_FILE")
 		defer os.Unsetenv("WS_LOG_LEVEL")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Log.Level != "error" {
 			t.Errorf("Level 环境变量设置失败, 实际得到 %v", config.Log.Level)
@@ -161,7 +175,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_JWT_TTL_HOURS")
 		defer os.Unsetenv("WS_JWT_SECRET")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Jwt.Secret != "test2-secret-change-me" {
 			t.Errorf("Secret 环境变量设置失败, 实际得到 %v", config.Jwt.Secret)
@@ -179,7 +195,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_AUTH_PASSWORD_HASH")
 		defer os.Unsetenv("WS_AUTH_USERNAME")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Auth.UserName != "lisi" {
 			t.Errorf("UserName 环境变量设置失败, 实际得到 %v", config.Auth.UserName)
@@ -195,7 +213,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Setenv("WS_PORT", "")
 		defer os.Unsetenv("WS_PORT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 8080 {
 			t.Errorf("Port 不为默认值, 实际得到 %d", config.Server.Port)
@@ -210,7 +230,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 		defer os.Unsetenv("WS_PING_INTERVAL")
 		defer os.Unsetenv("WS_PORT")
 
-		config.ApplyEnvOverrides()
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
 
 		if config.Server.Port != 9090 {
 			t.Errorf("Port 环境变量设置失败, 实际得到 %d", config.Server.Port)
@@ -221,15 +243,37 @@ func TestApplyEnvOverrides(t *testing.T) {
 	})
 
 	t.Run("环境变量为非法值", func(t *testing.T) {
-		config := defaultConfig()
+		tests := []struct {
+			name    string
+			key     string
+			value   string
+			wantErr string
+		}{
+			{"端口非数字", "WS_PORT", "abc", `环境变量 WS_PORT 的值 "abc" 无法解析为整数`},
+			{"心跳间隔为小数", "WS_PING_INTERVAL", "12.5", `环境变量 WS_PING_INTERVAL 的值 "12.5" 无法解析为整数`},
+			{"Pong 超时非数字", "WS_PONG_WAIT", "abc", `环境变量 WS_PONG_WAIT 的值 "abc" 无法解析为整数`},
+			{"限流速率非数字", "WS_RATELIMIT_INTERVAL", "abc", `环境变量 WS_RATELIMIT_INTERVAL 的值 "abc" 无法解析为整数`},
+			{"限流桶大小非数字", "WS_BURST", "abc", `环境变量 WS_BURST 的值 "abc" 无法解析为整数`},
+			{"优雅退出宽限期含前导空格", "WS_SHUTDOWN_TIMEOUT", " 3", `环境变量 WS_SHUTDOWN_TIMEOUT 的值 " 3" 无法解析为整数`},
+			{"鉴权过期时间非数字", "WS_JWT_TTL_HOURS", "abc", `环境变量 WS_JWT_TTL_HOURS 的值 "abc" 无法解析为整数`},
+		}
 
-		os.Setenv("WS_PORT", "abc")
-		defer os.Unsetenv("WS_PORT")
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				config := defaultConfig()
 
-		config.ApplyEnvOverrides()
+				os.Setenv(test.key, test.value)
+				defer os.Unsetenv(test.key)
 
-		if config.Server.Port != 8080 {
-			t.Errorf("Port 不为默认值, 实际得到 %d", config.Server.Port)
+				err := config.ApplyEnvOverrides()
+
+				if err == nil {
+					t.Fatalf("ApplyEnvOverrides() 期望错误 %q, 得到 nil", test.wantErr)
+				}
+				if err.Error() != test.wantErr {
+					t.Errorf("错误消息不匹配: got %q, want %q", err.Error(), test.wantErr)
+				}
+			})
 		}
 	})
 }

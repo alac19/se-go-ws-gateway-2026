@@ -90,7 +90,9 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("decode config failed: %w", err)
 	}
 
-	config.ApplyEnvOverrides()
+	if err := config.ApplyEnvOverrides(); err != nil {
+		return nil, fmt.Errorf("apply env overrides failed: %w", err)
+	}
 
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -104,38 +106,30 @@ func LoadConfig(path string) (*Config, error) {
 // WS_RATELIMIT_INTERVAL, WS_BURST, WS_SHUTDOWN_TIMEOUT,
 // WS_LOG_LEVEL, WS_LOG_FILE, WS_JWT_SECRET,
 // WS_JWT_TTL_HOURS, WS_AUTH_USERNAME, WS_AUTH_PASSWORD_HASH。
-// 仅当环境变量非空时才会覆盖, 数值型还需能正确解析。
-func (c *Config) ApplyEnvOverrides() {
-	if v := os.Getenv("WS_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.Port = port
-		}
+// 仅当环境变量非空时才会覆盖; 数值型环境变量若无法解析为整数则返回错误。
+func (c *Config) ApplyEnvOverrides() error {
+	if err := applyIntOverride("WS_PORT", &c.Server.Port); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_PING_INTERVAL"); v != "" {
-		if pingInternal, err := strconv.Atoi(v); err == nil {
-			c.Heartbeat.PingIntervalSeconds = pingInternal
-		}
+	if err := applyIntOverride("WS_PING_INTERVAL", &c.Heartbeat.PingIntervalSeconds); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_PONG_WAIT"); v != "" {
-		if pongWait, err := strconv.Atoi(v); err == nil {
-			c.Heartbeat.PongWaitSeconds = pongWait
-		}
+	if err := applyIntOverride("WS_PONG_WAIT", &c.Heartbeat.PongWaitSeconds); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_RATELIMIT_INTERVAL"); v != "" {
-		if ratelimitInternal, err := strconv.Atoi(v); err == nil {
-			c.Ratelimit.EverySeconds = ratelimitInternal
-		}
+	if err := applyIntOverride("WS_RATELIMIT_INTERVAL", &c.Ratelimit.EverySeconds); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_BURST"); v != "" {
-		if burst, err := strconv.Atoi(v); err == nil {
-			c.Ratelimit.Burst = burst
-		}
+	if err := applyIntOverride("WS_BURST", &c.Ratelimit.Burst); err != nil {
+		return err
 	}
-	if v := os.Getenv("WS_SHUTDOWN_TIMEOUT"); v != "" {
-		if shutdownTimeout, err := strconv.Atoi(v); err == nil {
-			c.GracefulShutdown.TimeoutSeconds = shutdownTimeout
-		}
+	if err := applyIntOverride("WS_SHUTDOWN_TIMEOUT", &c.GracefulShutdown.TimeoutSeconds); err != nil {
+		return err
 	}
+	if err := applyIntOverride("WS_JWT_TTL_HOURS", &c.Jwt.TTLHours); err != nil {
+		return err
+	}
+
 	if v := os.Getenv("WS_LOG_LEVEL"); v != "" {
 		c.Log.Level = v
 	}
@@ -145,17 +139,34 @@ func (c *Config) ApplyEnvOverrides() {
 	if v := os.Getenv("WS_JWT_SECRET"); v != "" {
 		c.Jwt.Secret = v
 	}
-	if v := os.Getenv("WS_JWT_TTL_HOURS"); v != "" {
-		if ttlHours, err := strconv.Atoi(v); err == nil {
-			c.Jwt.TTLHours = ttlHours
-		}
-	}
 	if v := os.Getenv("WS_AUTH_USERNAME"); v != "" {
 		c.Auth.UserName = v
 	}
 	if v := os.Getenv("WS_AUTH_PASSWORD_HASH"); v != "" {
 		c.Auth.PasswordHash = v
 	}
+
+	return nil
+}
+
+// applyIntOverride 在环境变量 name 非空时将其解析为整数并写入 target。
+// 环境变量未设置或为空时保持 target 不变; 解析失败时返回错误。
+func applyIntOverride(name string, target *int) error {
+	v := os.Getenv(name)
+
+	if v == "" {
+		return nil
+	}
+
+	parsed, err := strconv.Atoi(v)
+
+	if err != nil {
+		return fmt.Errorf("环境变量 %s 的值 %q 无法解析为整数", name, v)
+	}
+
+	*target = parsed
+
+	return nil
 }
 
 // Validate 校验配置项的合法性。
