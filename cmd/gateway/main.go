@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -48,6 +50,14 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Recovery())
+
+	// 不信任任何代理: 网关直接对外暴露时, ClientIP() 只取 TCP 连接的对端地址,
+	// 从而忽略客户端自行伪造的 X-Forwarded-For / X-Real-IP, 避免限流被绕过。
+	// 若将来在网关前部署反向代理, 这里应改为代理的 IP 或网段, 再由代理传递真实 IP。
+	if err := r.SetTrustedProxies(nil); err != nil {
+		slog.Error("设置可信代理失败", "error", err)
+		os.Exit(1)
+	}
 
 	var wg sync.WaitGroup
 
@@ -106,13 +116,31 @@ func main() {
 
 	go func() {
 		if err := http.ListenAndServe(":6060", nil); err != nil {
-			slog.Error("pprof 服务启动失败", "error", err)
+			// pprof 仅用于调试, 启动失败不影响网关对外提供服务, 因此降级为 Warn
+			slog.Warn("pprof 服务启动失败, 网关主服务不受影响", "error", err)
 		}
 	}()
 
 	httpSvr := http.Server{Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: r}
 
-	go httpSvr.ListenAndServe()
+	// 先同步监听端口, 让"端口被占用"这类错误在启动阶段就以 Error 暴露并退出,
+	// 否则监听失败只会在后台静默发生, 进程照常运行却无法对外服务。
+	ln, err := net.Listen("tcp", httpSvr.Addr)
+
+	if err != nil {
+		slog.Error("HTTP 服务监听失败", "addr", httpSvr.Addr, "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("网关服务启动完成", "addr", httpSvr.Addr, "pprof", ":6060")
+
+	go func() {
+		// 关闭时的 ErrServerClosed 属于正常退出, 不作为错误记录
+		if err := httpSvr.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("HTTP 服务异常退出", "error", err)
+			os.Exit(1)
+		}
+	}()
 
 	if s := <-quit; s != nil { // 收到信号
 		slog.Info("收到终止信号，开始优雅退出")
@@ -125,5 +153,7 @@ func main() {
 
 		clientMgr.Shutdown(cfg.ShutdownTimeout(), cfg.ControlWriteTimeout())
 		wg.Wait()
+
+		slog.Info("网关已退出")
 	}
 }

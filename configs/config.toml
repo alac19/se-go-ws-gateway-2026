@@ -26,7 +26,7 @@ burst = 5
 timeout_seconds = 5
 
 [log]
-level = "error"    
+level = "info"     # debug/info/warn/error; 生产可调高到 warn 或 error, 也可用 WS_LOG_LEVEL 覆盖
 file_path = "logs/gateway.log" 
 
 [jwt]
