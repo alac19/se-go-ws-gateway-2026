@@ -51,6 +51,10 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// 跨域处理放在最前面: 浏览器的 OPTIONS 预检请求不带 Authorization 头,
+	// 必须在限流与鉴权中间件之前直接返回, 否则前端会被判定为跨域失败。
+	r.Use(middleware.HandleCORS())
+
 	// 不信任任何代理: 网关直接对外暴露时, ClientIP() 只取 TCP 连接的对端地址,
 	// 从而忽略客户端自行伪造的 X-Forwarded-For / X-Real-IP, 避免限流被绕过。
 	// 若将来在网关前部署反向代理, 这里应改为代理的 IP 或网段, 再由代理传递真实 IP。
