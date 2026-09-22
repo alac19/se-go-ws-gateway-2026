@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AppHeader from '../components/AppHeader.vue'
 import { broadcastAll, broadcastRoom, sendToClient } from '../api/broadcast'
 import { getStats } from '../api/stats'
 
@@ -159,11 +160,6 @@ function clearMessages() {
   messages.value = []
 }
 
-function handleLogout() {
-  localStorage.removeItem('token')
-  router.push({ name: 'login' })
-}
-
 onBeforeUnmount(() => {
   if (socket.value) {
     socket.value.onclose = null
@@ -177,16 +173,7 @@ loadRoomSuggestions()
 
 <template>
   <div class="page">
-    <header class="topbar">
-      <span class="title">消息推送</span>
-      <nav>
-        <router-link to="/dashboard">看板</router-link>
-        <router-link to="/broadcast">消息推送</router-link>
-      </nav>
-      <button class="ghost" @click="handleLogout">
-        退出登录
-      </button>
-    </header>
+    <AppHeader title="消息推送" />
 
     <main class="content">
       <div class="layout">
@@ -287,38 +274,6 @@ loadRoomSuggestions()
 <style scoped>
 .page {
   min-height: 100vh;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  height: 56px;
-  padding: 0 24px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
-}
-
-.title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2d3d;
-}
-
-nav {
-  display: flex;
-  gap: 16px;
-  flex: 1;
-}
-
-nav a {
-  font-size: 14px;
-  color: #606266;
-  text-decoration: none;
-}
-
-nav a.router-link-active {
-  color: #409eff;
 }
 
 .content {

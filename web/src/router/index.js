@@ -15,6 +15,12 @@ const routes = [
     component: () => import('../views/BroadcastView.vue'),
     meta: { requiresAuth: true, title: '消息推送' },
   },
+  {
+    path: '/architecture',
+    name: 'architecture',
+    component: () => import('../views/ArchitectureView.vue'),
+    meta: { requiresAuth: true, title: '系统架构图' },
+  },
 ]
 
 const router = createRouter({
