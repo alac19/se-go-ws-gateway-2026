@@ -21,7 +21,7 @@ type ClientManager struct {
 	clients      sync.Map
 	register     chan *model.Client
 	unregister   chan string
-	roomMgr      *RoomManager
+	roomMgr      IRoomManager
 	shuttingDown bool
 }
 
@@ -30,7 +30,7 @@ type ClientManager struct {
 //   - roomMgr: 房间管理器实例
 //   - registerBufferSize: register 通道的缓冲区大小
 //   - unregisterBufferSize: unregister 通道的缓冲区大小
-func NewClientManager(roomMgr *RoomManager, registerBufferSize, unregisterBufferSize int) *ClientManager {
+func NewClientManager(roomMgr IRoomManager, registerBufferSize, unregisterBufferSize int) *ClientManager {
 	return &ClientManager{
 		clients:    sync.Map{},
 		register:   make(chan *model.Client, registerBufferSize),
@@ -89,7 +89,10 @@ func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Dura
 			metrics.ConnEventTotal.Inc()
 
 			if client.RoomID != "" && cm.roomMgr != nil {
-				cm.roomMgr.Join(client.RoomID, client.ClientID)
+				// 房间操作可能失败(如 Redis 异常), 记录日志但不影响连接本身
+				if err := cm.roomMgr.Join(client.RoomID, client.ClientID); err != nil {
+					slog.Warn("客户端加入房间失败", "clientId", client.ClientID, "roomId", client.RoomID, "error", err)
+				}
 			}
 		case clientID := <-cm.unregister:
 			val, ok := cm.clients.LoadAndDelete(clientID)
@@ -108,7 +111,9 @@ func (cm *ClientManager) Init(ctx context.Context, controlWriteTimeout time.Dura
 
 			// 从所有房间移除
 			if cm.roomMgr != nil {
-				cm.roomMgr.RemoveClientFromAllRooms(clientID)
+				if err := cm.roomMgr.RemoveClientFromAllRooms(clientID); err != nil {
+					slog.Warn("从房间移除客户端失败", "clientId", clientID, "error", err)
+				}
 			}
 
 			if client.Conn != nil {
@@ -204,7 +209,9 @@ func (cm *ClientManager) Shutdown(gracePeriod, controlWriteTimeout time.Duration
 
 		// 从所有房间移除
 		if cm.roomMgr != nil {
-			cm.roomMgr.RemoveClientFromAllRooms(client.ClientID)
+			if err := cm.roomMgr.RemoveClientFromAllRooms(client.ClientID); err != nil {
+				slog.Warn("从房间移除客户端失败", "clientId", client.ClientID, "error", err)
+			}
 		}
 
 		if client.Conn != nil {

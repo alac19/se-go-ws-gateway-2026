@@ -13,13 +13,14 @@ type RedisRoomManager struct {
 	ctx    context.Context
 }
 
-// NewRedisRoomManager 创建Redis版本房间管理器
-func NewRedisRoomManager(redisAddr string) *RedisRoomManager {
-	rdb := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-	})
+// 编译期保证 Redis 实现满足统一的房间管理器接口
+var _ IRoomManager = (*RedisRoomManager)(nil)
+
+// NewRedisRoomManager 基于已建立的 Redis 客户端创建分布式房间管理器。
+// 客户端由 main 持有并在退出时统一关闭, 与消息路由共用同一个连接池。
+func NewRedisRoomManager(client *redis.Client) *RedisRoomManager {
 	return &RedisRoomManager{
-		client: rdb,
+		client: client,
 		ctx:    context.Background(),
 	}
 }

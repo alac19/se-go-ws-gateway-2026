@@ -41,7 +41,7 @@ func HandleBroadcast(router *service.MessageRouter) gin.HandlerFunc {
 // HandleRoomBroadcast 房间广播：读取请求体 JSON 并推送给指定房间的所有客户端。
 // 若 roomId 为空或房间不存在, 返回对应的 400 或 404 错误。
 // 推送成功后返回 200 状态码, 业务码为 BizCodeSuccess（0）。
-func HandleRoomBroadcast(router *service.MessageRouter, roomMgr *service.RoomManager) gin.HandlerFunc {
+func HandleRoomBroadcast(router *service.MessageRouter, roomMgr service.IRoomManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 读取请求原始数据
 		body, err := c.GetRawData()
@@ -115,7 +115,7 @@ func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 // HandleStats 连接统计：返回当前网关的在线连接数和各房间连接分布。
 // 响应体包含：总在线连接数、各房间连接数分布、服务运行时长（秒）。
 // 始终返回 200 状态码, 业务码为 BizCodeSuccess（0）。
-func HandleStats(clientMgr *service.ClientManager, roomMgr *service.RoomManager, svrInitTime time.Time) gin.HandlerFunc {
+func HandleStats(clientMgr *service.ClientManager, roomMgr service.IRoomManager, svrInitTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		res1 := clientMgr.GetOnlineCount()
 		// --------修复 GetAllRoomsConnStats 返回两个值--------

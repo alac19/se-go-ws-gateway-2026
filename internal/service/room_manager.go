@@ -17,6 +17,9 @@ type IRoomManager interface {
 	HasRoom(roomID string) (bool, error)
 }
 
+// 编译期保证内存实现满足统一的房间管理器接口
+var _ IRoomManager = (*RoomManager)(nil)
+
 // RoomManager 房间管理器，读写锁保证并发安全（内存单机实现）
 type RoomManager struct {
 	mu    sync.RWMutex

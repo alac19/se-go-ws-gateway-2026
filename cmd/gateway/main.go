@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/time/rate"
 
 	"github.com/alac/se-go-ws-gateway-2026/internal/config"
@@ -73,9 +74,34 @@ func main() {
 	metrics.Init(nil)
 
 	// 1. 初始化核心层（顺序：RoomManager -> ClientManager -> MessageRouter）
-	roomMgr := service.NewRoomManager()
+	// 房间管理按配置选择实现: 启用 Redis 时使用分布式房间管理与跨实例广播同步,
+	// Redis 未启用或连接失败时降级为内存模式, 保证单机功能不受影响。
+	var (
+		roomMgr     service.IRoomManager
+		redisClient *redis.Client
+	)
+
+	if cfg.Redis.Enabled {
+		client, err := service.NewRedisClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+
+		if err != nil {
+			slog.Warn("Redis 连接失败, 降级为内存模式", "addr", cfg.Redis.Addr, "error", err)
+		} else {
+			redisClient = client
+			roomMgr = service.NewRedisRoomManager(client)
+
+			slog.Info("Redis 已启用", "addr", cfg.Redis.Addr, "db", cfg.Redis.DB, "mode", "分布式房间管理 + 跨实例广播同步")
+		}
+	}
+
+	if roomMgr == nil {
+		roomMgr = service.NewRoomManager()
+
+		slog.Info("使用内存模式房间管理", "reason", "Redis 未启用或不可用")
+	}
+
 	clientMgr := service.NewClientManager(roomMgr, cfg.Channel.RegisterBufferSize, cfg.Channel.UnregisterBufferSize)
-	router := service.NewMessageRouter(clientMgr, roomMgr, nil)
+	router := service.NewMessageRouter(clientMgr, roomMgr, redisClient)
 	lm := limiter.NewLimiterMap(rate.Every(cfg.RateLimitInterval()), cfg.Ratelimit.Burst)
 	md1 := middleware.HandleRateLimit(lm)
 	a := auth.NewAuthenticator(cfg.Jwt.Secret, cfg.TokenTTL())
@@ -157,6 +183,14 @@ func main() {
 
 		clientMgr.Shutdown(cfg.ShutdownTimeout(), cfg.ControlWriteTimeout())
 		wg.Wait()
+
+		if redisClient != nil {
+			if err := redisClient.Close(); err != nil {
+				slog.Warn("关闭 Redis 连接失败", "error", err)
+			} else {
+				slog.Info("Redis 连接已关闭")
+			}
+		}
 
 		slog.Info("网关已退出")
 	}

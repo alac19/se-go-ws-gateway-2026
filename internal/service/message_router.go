@@ -4,19 +4,20 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"sync"
-	"log"
+
+	"github.com/redis/go-redis/v9"
 
 	"github.com/alac/se-go-ws-gateway-2026/internal/model"
 	"github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
-	"github.com/go-redis/redis/v8"
 )
 
 // MessageRouter 消息路由核心，负责各类消息分发
 type MessageRouter struct {
 	clientMgr *ClientManager
-	roomMgr   *RoomManager
-	redisCli  *redis.Client // 分布式集群同步
+	roomMgr   IRoomManager
+	redisCli  *redis.Client // 分布式集群同步, 为 nil 表示未启用
 	ctx       context.Context
 }
 
@@ -24,7 +25,7 @@ var routerOnce sync.Once
 var globalRouter *MessageRouter
 
 // NewMessageRouter 创建全局路由单例
-func NewMessageRouter(cm *ClientManager, rm *RoomManager, redisCli *redis.Client) *MessageRouter {
+func NewMessageRouter(cm *ClientManager, rm IRoomManager, redisCli *redis.Client) *MessageRouter {
 	routerOnce.Do(func() {
 		globalRouter = &MessageRouter{
 			clientMgr: cm,
@@ -71,7 +72,8 @@ func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 	metrics.MsgSendTotal.WithLabelValues("room").Inc()
 	clientIDs, err := r.roomMgr.GetClients(roomId)
 	if err != nil {
-		log.Printf("SendRoom GetClients error, roomId=%s, err=%v", roomId, err)
+		slog.Warn("查询房间成员失败", "roomId", roomId, "error", err)
+
 		return
 	}
 	for _, cid := range clientIDs {
@@ -79,7 +81,9 @@ func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 	}
 	// 分布式同步：推送至Redis Pub/Sub，其他网关同步推送
 	if r.redisCli != nil {
-		_ = r.redisCli.Publish(r.ctx, "ws:room:"+roomId, msg.Payload).Err()
+		if err := r.redisCli.Publish(r.ctx, "ws:room:"+roomId, msg.Payload).Err(); err != nil {
+			slog.Warn("房间消息发布到 Redis 失败", "roomId", roomId, "error", err)
+		}
 	}
 }
 
@@ -101,7 +105,9 @@ func (r *MessageRouter) SendBroadcast(msg *model.Message) {
 
 	// 分布式集群同步
 	if r.redisCli != nil {
-		_ = r.redisCli.Publish(r.ctx, "ws:broadcast", msg.Payload).Err()
+		if err := r.redisCli.Publish(r.ctx, "ws:broadcast", msg.Payload).Err(); err != nil {
+			slog.Warn("广播消息发布到 Redis 失败", "error", err)
+		}
 	}
 }
 

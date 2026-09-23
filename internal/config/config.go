@@ -23,6 +23,7 @@ type Config struct {
 	Log              Log              `toml:"log"`
 	Jwt              JWT              `toml:"jwt"`
 	Auth             Auth             `toml:"auth"`
+	Redis            Redis            `toml:"redis"`
 }
 
 // Server 定义 HTTP 服务器配置。
@@ -82,6 +83,15 @@ type Auth struct {
 	PasswordHash string `toml:"password_hash"` // 哈希码
 }
 
+// Redis 定义分布式扩展配置。
+// 关闭时使用内存版房间管理且不做跨实例同步; 开启后使用 Redis 做分布式房间管理与跨实例广播。
+type Redis struct {
+	Enabled  bool   `toml:"enabled"`  // 是否启用 Redis
+	Addr     string `toml:"addr"`     // Redis 地址, 形如 localhost:6379
+	Password string `toml:"password"` // 密码, 无密码留空
+	DB       int    `toml:"db"`       // 数据库编号
+}
+
 // LoadConfig 从指定路径加载 TOML 配置文件, 并校验配置合法性。
 func LoadConfig(path string) (*Config, error) {
 	var config Config
@@ -105,7 +115,8 @@ func LoadConfig(path string) (*Config, error) {
 // 支持的环境变量：WS_PORT, WS_PING_INTERVAL, WS_PONG_WAIT,
 // WS_RATELIMIT_INTERVAL, WS_BURST, WS_SHUTDOWN_TIMEOUT,
 // WS_LOG_LEVEL, WS_LOG_FILE, WS_JWT_SECRET,
-// WS_JWT_TTL_HOURS, WS_AUTH_USERNAME, WS_AUTH_PASSWORD_HASH。
+// WS_JWT_TTL_HOURS, WS_AUTH_USERNAME, WS_AUTH_PASSWORD_HASH,
+// WS_REDIS_ENABLED, WS_REDIS_ADDR, WS_REDIS_PASSWORD, WS_REDIS_DB。
 // 仅当环境变量非空时才会覆盖; 数值型环境变量若无法解析为整数则返回错误。
 func (c *Config) ApplyEnvOverrides() error {
 	if err := applyIntOverride("WS_PORT", &c.Server.Port); err != nil {
@@ -144,6 +155,23 @@ func (c *Config) ApplyEnvOverrides() error {
 	}
 	if v := os.Getenv("WS_AUTH_PASSWORD_HASH"); v != "" {
 		c.Auth.PasswordHash = v
+	}
+	if v := os.Getenv("WS_REDIS_ENABLED"); v != "" {
+		enabled, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 WS_REDIS_ENABLED 的值 %q 无法解析为布尔值", v)
+		}
+
+		c.Redis.Enabled = enabled
+	}
+	if v := os.Getenv("WS_REDIS_ADDR"); v != "" {
+		c.Redis.Addr = v
+	}
+	if v := os.Getenv("WS_REDIS_PASSWORD"); v != "" {
+		c.Redis.Password = v
+	}
+	if err := applyIntOverride("WS_REDIS_DB", &c.Redis.DB); err != nil {
+		return err
 	}
 
 	return nil
@@ -256,6 +284,14 @@ func (c *Config) Validate() error {
 	}
 	if !isBcryptHash(c.Auth.PasswordHash) {
 		return fmt.Errorf("auth.password_hash 必须为合法的 bcrypt 哈希(以 $2a$/$2b$/$2y$ 开头, 长度 60), 当前值: %s", c.Auth.PasswordHash)
+	}
+
+	// Redis
+	if c.Redis.Enabled && c.Redis.Addr == "" {
+		return fmt.Errorf("redis.addr 在启用 Redis 时不能为空")
+	}
+	if c.Redis.DB < 0 {
+		return fmt.Errorf("redis.db 不能为负数, 当前值: %d", c.Redis.DB)
 	}
 
 	return nil
