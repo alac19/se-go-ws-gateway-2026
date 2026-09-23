@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	model "github.com/alac/se-go-ws-gateway-2026/internal/model"
 	service "github.com/alac/se-go-ws-gateway-2026/internal/service"
 )
@@ -21,25 +20,20 @@ func HandleBroadcast(router *service.MessageRouter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 读取请求体原始数据
 		body, err := c.GetRawData()
-
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "无效的请求体"})
 			return
 		}
-
 		if len(body) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "请求体不能为空"})
 			return
 		}
-
 		if !json.Valid(body) || !(body[0] == '{' || body[0] == '[') {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "无效的 JSON 格式"})
 			return
 		}
-
 		msg := &model.Message{Payload: body}
 		router.SendBroadcast(msg)
-
 		c.JSON(http.StatusOK, gin.H{"code": model.BizCodeSuccess, "status": "success", "data": nil})
 	}
 }
@@ -51,39 +45,35 @@ func HandleRoomBroadcast(router *service.MessageRouter, roomMgr *service.RoomMan
 	return func(c *gin.Context) {
 		// 读取请求原始数据
 		body, err := c.GetRawData()
-
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "无效的请求体"})
 			return
 		}
-
 		if len(body) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "请求体不能为空"})
 			return
 		}
-
 		if !json.Valid(body) || !(body[0] == '{' || body[0] == '[') {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "无效的 JSON 格式"})
 			return
 		}
-
 		roomId := c.Param("roomId")
-
 		if roomId == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "roomId is required"})
 			return
 		}
-
-		ok := roomMgr.HasRoom(roomId)
-
+		// --------修复 HasRoom 返回两个值--------
+		ok, err := roomMgr.HasRoom(roomId)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "status": "error", "error": "查询房间失败"})
+			return
+		}
 		if !ok {
 			c.JSON(http.StatusNotFound, gin.H{"code": model.BizCodeNotFound, "status": "error", "error": "目标房间不存在"})
 			return
 		}
-
 		msg := &model.Message{Payload: body}
 		router.SendRoom(roomId, msg)
-
 		c.JSON(http.StatusOK, gin.H{"code": model.BizCodeSuccess, "status": "success", "data": nil})
 	}
 }
@@ -95,37 +85,29 @@ func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 读取请求体原始数据
 		body, err := c.GetRawData()
-
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "无效的请求体"})
 			return
 		}
-
 		if len(body) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "请求体不能为空"})
 			return
 		}
-
 		if !json.Valid(body) || !(body[0] == '{' || body[0] == '[') {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "无效的 JSON 格式"})
 			return
 		}
-
 		clientId := c.Param("clientId")
-
 		if clientId == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"code": model.BizCodeBadRequest, "status": "error", "error": "clientId is required"})
 			return
 		}
-
 		msg := &model.Message{Payload: body}
 		ok := router.SendSingle(clientId, msg)
-
 		if !ok {
 			c.JSON(http.StatusNotFound, gin.H{"code": model.BizCodeNotFound, "status": "error", "error": "目标客户端离线或不存在"})
 			return
 		}
-
 		c.JSON(http.StatusOK, gin.H{"code": model.BizCodeSuccess, "status": "success", "data": nil})
 	}
 }
@@ -136,8 +118,12 @@ func HandleClientSend(router *service.MessageRouter) gin.HandlerFunc {
 func HandleStats(clientMgr *service.ClientManager, roomMgr *service.RoomManager, svrInitTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		res1 := clientMgr.GetOnlineCount()
-		res2 := roomMgr.GetAllRoomsConnStats()
-
+		// --------修复 GetAllRoomsConnStats 返回两个值--------
+		res2, err := roomMgr.GetAllRoomsConnStats()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "status": "error", "error": "获取房间统计失败"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":   model.BizCodeSuccess,
 			"status": "success",

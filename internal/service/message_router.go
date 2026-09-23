@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"sync"
+	"log"
 
 	"github.com/alac/se-go-ws-gateway-2026/internal/model"
 	"github.com/alac/se-go-ws-gateway-2026/pkg/metrics"
@@ -68,12 +69,14 @@ func (r *MessageRouter) SendSingle(clientId string, msg *model.Message) bool {
 // SendRoom 房间全员广播
 func (r *MessageRouter) SendRoom(roomId string, msg *model.Message) {
 	metrics.MsgSendTotal.WithLabelValues("room").Inc()
-
-	clientIDs := r.roomMgr.GetClients(roomId)
+	clientIDs, err := r.roomMgr.GetClients(roomId)
+	if err != nil {
+		log.Printf("SendRoom GetClients error, roomId=%s, err=%v", roomId, err)
+		return
+	}
 	for _, cid := range clientIDs {
 		r.SendSingle(cid, msg)
 	}
-
 	// 分布式同步：推送至Redis Pub/Sub，其他网关同步推送
 	if r.redisCli != nil {
 		_ = r.redisCli.Publish(r.ctx, "ws:room:"+roomId, msg.Payload).Err()
