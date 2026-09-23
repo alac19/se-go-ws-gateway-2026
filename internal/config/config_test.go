@@ -18,6 +18,7 @@ func defaultConfig() Config {
 		Log:              Log{Level: "info", FilePath: "logs/gateway.log"},
 		Jwt:              JWT{Secret: "test-secret-change-me", TTLHours: 24},
 		Auth:             Auth{UserName: "zhangsan", PasswordHash: "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U."},
+		Redis:            Redis{Enabled: false, Addr: "localhost:6379", DB: 0},
 	}
 }
 
@@ -207,6 +208,36 @@ func TestApplyEnvOverrides(t *testing.T) {
 		}
 	})
 
+	t.Run("Redis 参数覆盖", func(t *testing.T) {
+		config := defaultConfig()
+
+		os.Setenv("WS_REDIS_ENABLED", "true")
+		os.Setenv("WS_REDIS_ADDR", "redis.example.com:6380")
+		os.Setenv("WS_REDIS_PASSWORD", "secret")
+		os.Setenv("WS_REDIS_DB", "2")
+		defer os.Unsetenv("WS_REDIS_DB")
+		defer os.Unsetenv("WS_REDIS_PASSWORD")
+		defer os.Unsetenv("WS_REDIS_ADDR")
+		defer os.Unsetenv("WS_REDIS_ENABLED")
+
+		if err := config.ApplyEnvOverrides(); err != nil {
+			t.Fatalf("ApplyEnvOverrides() 期望 nil, 得到 %v", err)
+		}
+
+		if !config.Redis.Enabled {
+			t.Errorf("Enabled 环境变量设置失败, 实际得到 %v", config.Redis.Enabled)
+		}
+		if config.Redis.Addr != "redis.example.com:6380" {
+			t.Errorf("Addr 环境变量设置失败, 实际得到 %v", config.Redis.Addr)
+		}
+		if config.Redis.Password != "secret" {
+			t.Errorf("Password 环境变量设置失败, 实际得到 %v", config.Redis.Password)
+		}
+		if config.Redis.DB != 2 {
+			t.Errorf("DB 环境变量设置失败, 实际得到 %d", config.Redis.DB)
+		}
+	})
+
 	t.Run("环境变量为空", func(t *testing.T) {
 		config := defaultConfig()
 
@@ -256,6 +287,8 @@ func TestApplyEnvOverrides(t *testing.T) {
 			{"限流桶大小非数字", "WS_BURST", "abc", `环境变量 WS_BURST 的值 "abc" 无法解析为整数`},
 			{"优雅退出宽限期含前导空格", "WS_SHUTDOWN_TIMEOUT", " 3", `环境变量 WS_SHUTDOWN_TIMEOUT 的值 " 3" 无法解析为整数`},
 			{"鉴权过期时间非数字", "WS_JWT_TTL_HOURS", "abc", `环境变量 WS_JWT_TTL_HOURS 的值 "abc" 无法解析为整数`},
+			{"Redis 开关非布尔值", "WS_REDIS_ENABLED", "yes", `环境变量 WS_REDIS_ENABLED 的值 "yes" 无法解析为布尔值`},
+			{"Redis 库编号非数字", "WS_REDIS_DB", "abc", `环境变量 WS_REDIS_DB 的值 "abc" 无法解析为整数`},
 		}
 
 		for _, test := range tests {
@@ -301,34 +334,39 @@ func TestValidate(t *testing.T) {
 		ttlHours                   int
 		userName                   string
 		passwordHash               string
+		redisEnabled               bool
+		redisAddr                  string
+		redisDB                    int
 		wantErr                    error
 	}{
-		{"配置合法", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", nil},
-		{"端口为 0", 0, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("server.port 必须在 1-65535 之间, 当前值: 0")},
-		{"端口为 65536", 65536, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("server.port 必须在 1-65535 之间, 当前值: 65536")},
-		{"读缓冲区间为 0", 8080, 0, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.read_buffer_size 必须 > 0, 当前值: 0")},
-		{"写缓冲区间为 0", 8080, 1024, 0, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.write_buffer_size 必须 > 0, 当前值: 0")},
-		{"读超时为 0", 8080, 1024, 1024, 0, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.read_deadline_seconds 必须 > 0, 当前值: 0")},
-		{"写超时为 0", 8080, 1024, 1024, 60, 0, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.write_deadline_seconds 必须 > 0, 当前值: 0")},
-		{"控制帧发送超时为 0", 8080, 1024, 1024, 60, 10, 0, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("websocket.control_write_timeout_seconds 必须 > 0, 当前值: 0")},
-		{"心跳间隔为 0", 8080, 1024, 1024, 60, 10, 1, 0, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.ping_interval_seconds 必须 > 0, 当前值: 0")},
-		{"pong 超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 0, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.pong_wait_seconds 必须 > 0, 当前值: 0")},
-		{"pong 超时小于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 20, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 20")},
-		{"pong 超时等于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 30, 10, 255, 255, 255, 12, 5, 5, "info", "detestv-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 30")},
-		{"ping 帧发送超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 0, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("heartbeat.ping_write_timeout_seconds 必须 > 0, 当前值: 0")},
-		{"send 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 0, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("channel.send_buffer_size 必须 > 0, 当前值: 0")},
-		{"register 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 0, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("channel.register_buffer_size 必须 > 0, 当前值: 0")},
-		{"unregister 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 0, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("channel.unregister_buffer_size 必须 > 0, 当前值: 0")},
-		{"限流速率为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 0, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("ratelimit.every_seconds 必须 > 0, 当前值: 0")},
-		{"限流桶大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 0, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("ratelimit.burst 必须 > 0, 当前值: 0")},
-		{"优雅退出宽限期为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 0, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("graceful_shutdown.timeout_seconds 必须 > 0, 当前值: 0")},
-		{"日志级别为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("log.level 必须为 debug/info/warn/error 其中一个, 当前值: ")},
-		{"密钥为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("jwt.secret 不能为空, 当前值: ")},
-		{"密钥长度小于 16", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test3-secret", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("jwt.secret 长度不能少于 16 个字符(建议 32 以上), 当前长度: 12")},
-		{"鉴权过期时间为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 0, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("jwt.ttl_hours 必须 > 0, 当前值: 0")},
-		{"预置账号名为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", errors.New("auth.username 不能为空, 当前值: ")},
-		{"预置哈希值为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "", errors.New("auth.password_hash 不能为空, 当前值: ")},
-		{"预置哈希值格式错误", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "default", errors.New("auth.password_hash 必须为合法的 bcrypt 哈希(以 $2a$/$2b$/$2y$ 开头, 长度 60), 当前值: default")},
+		{"配置合法", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, nil},
+		{"端口为 0", 0, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("server.port 必须在 1-65535 之间, 当前值: 0")},
+		{"端口为 65536", 65536, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("server.port 必须在 1-65535 之间, 当前值: 65536")},
+		{"读缓冲区间为 0", 8080, 0, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("websocket.read_buffer_size 必须 > 0, 当前值: 0")},
+		{"写缓冲区间为 0", 8080, 1024, 0, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("websocket.write_buffer_size 必须 > 0, 当前值: 0")},
+		{"读超时为 0", 8080, 1024, 1024, 0, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("websocket.read_deadline_seconds 必须 > 0, 当前值: 0")},
+		{"写超时为 0", 8080, 1024, 1024, 60, 0, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("websocket.write_deadline_seconds 必须 > 0, 当前值: 0")},
+		{"控制帧发送超时为 0", 8080, 1024, 1024, 60, 10, 0, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("websocket.control_write_timeout_seconds 必须 > 0, 当前值: 0")},
+		{"心跳间隔为 0", 8080, 1024, 1024, 60, 10, 1, 0, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("heartbeat.ping_interval_seconds 必须 > 0, 当前值: 0")},
+		{"pong 超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 0, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("heartbeat.pong_wait_seconds 必须 > 0, 当前值: 0")},
+		{"pong 超时小于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 20, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 20")},
+		{"pong 超时等于心跳间隔", 8080, 1024, 1024, 60, 10, 1, 30, 30, 10, 255, 255, 255, 12, 5, 5, "info", "detestv-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("heartbeat.pong_wait_seconds 必须 > 30, 当前值: 30")},
+		{"ping 帧发送超时为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 0, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("heartbeat.ping_write_timeout_seconds 必须 > 0, 当前值: 0")},
+		{"send 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 0, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("channel.send_buffer_size 必须 > 0, 当前值: 0")},
+		{"register 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 0, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("channel.register_buffer_size 必须 > 0, 当前值: 0")},
+		{"unregister 缓冲大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 0, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("channel.unregister_buffer_size 必须 > 0, 当前值: 0")},
+		{"限流速率为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 0, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("ratelimit.every_seconds 必须 > 0, 当前值: 0")},
+		{"限流桶大小为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 0, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("ratelimit.burst 必须 > 0, 当前值: 0")},
+		{"优雅退出宽限期为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 0, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("graceful_shutdown.timeout_seconds 必须 > 0, 当前值: 0")},
+		{"日志级别为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("log.level 必须为 debug/info/warn/error 其中一个, 当前值: ")},
+		{"密钥为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("jwt.secret 不能为空, 当前值: ")},
+		{"密钥长度小于 16", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test3-secret", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("jwt.secret 长度不能少于 16 个字符(建议 32 以上), 当前长度: 12")},
+		{"鉴权过期时间为 0", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 0, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("jwt.ttl_hours 必须 > 0, 当前值: 0")},
+		{"预置账号名为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", 0, errors.New("auth.username 不能为空, 当前值: ")},
+		{"预置哈希值为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "", false, "localhost:6379", 0, errors.New("auth.password_hash 不能为空, 当前值: ")},
+		{"预置哈希值格式错误", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "default", false, "localhost:6379", 0, errors.New("auth.password_hash 必须为合法的 bcrypt 哈希(以 $2a$/$2b$/$2y$ 开头, 长度 60), 当前值: default")},
+		{"启用 Redis 但地址为空", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", true, "", 0, errors.New("redis.addr 在启用 Redis 时不能为空")},
+		{"Redis 数据库编号为负数", 8080, 1024, 1024, 60, 10, 1, 30, 60, 10, 255, 255, 255, 12, 5, 5, "info", "test-secret-change-me", 24, "zhangsan", "$2a$10$1.u3pTISj0QHmvquKGDKOO8kxXVhSmCcqbdkN4HHLauKUsO8yl3U.", false, "localhost:6379", -1, errors.New("redis.db 不能为负数, 当前值: -1")},
 	}
 
 	for _, test := range tests {
@@ -355,6 +393,9 @@ func TestValidate(t *testing.T) {
 			config.Jwt.TTLHours = test.ttlHours
 			config.Auth.UserName = test.userName
 			config.Auth.PasswordHash = test.passwordHash
+			config.Redis.Enabled = test.redisEnabled
+			config.Redis.Addr = test.redisAddr
+			config.Redis.DB = test.redisDB
 
 			got := config.Validate()
 

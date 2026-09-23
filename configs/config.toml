@@ -36,3 +36,9 @@ ttl_hours = 24
 [auth]
 username = "zhangsan"
 password_hash = "$2a$10$MqkF//ZWuwkD2z1gJdPYZuURfCrSs4VLa7.dNX1VnBTYg28.lrCka"  # 演示专用
+
+[redis]
+enabled = false        # 关闭时使用内存版房间管理且不做跨实例同步, 可用 WS_REDIS_ENABLED 覆盖
+addr = "localhost:6379"
+password = ""
+db = 0
